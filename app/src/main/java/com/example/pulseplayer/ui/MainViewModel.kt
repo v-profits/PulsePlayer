@@ -21,6 +21,7 @@ import com.example.pulseplayer.data.DocEntry
 import com.example.pulseplayer.data.FAVORITES_ID
 import com.example.pulseplayer.data.FolderEntity
 import com.example.pulseplayer.data.MediaScanner
+import com.example.pulseplayer.data.NaturalOrder
 import com.example.pulseplayer.data.PlaylistEntity
 import com.example.pulseplayer.data.PlaylistItem
 import com.example.pulseplayer.data.Track
@@ -45,12 +46,18 @@ import kotlinx.coroutines.launch
 
 enum class SortMode(@StringRes val label: Int) {
     TITLE(R.string.sort_title),
+    FILENAME(R.string.sort_filename),
     ARTIST(R.string.sort_artist),
     RECENT(R.string.sort_recent),
     DURATION(R.string.sort_duration),
 }
 
 enum class BrowserAction { PLAY, SHUFFLE, PLAY_NEXT, QUEUE, PLAYLIST, FAV_TRACKS, FAV_FOLDERS }
+
+/** Порядок по имени файла с учётом чисел: 1, 2, 3 … 10, 11, 12. */
+val FileOrder = Comparator<Track> { a, b ->
+    NaturalOrder.compare(a.fileName.ifBlank { a.title }, b.fileName.ifBlank { b.title })
+}
 
 data class Group(
     val key: String,
@@ -90,8 +97,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)
         }
         when (s) {
-            SortMode.TITLE -> f.sortedBy { it.title.lowercase() }
-            SortMode.ARTIST -> f.sortedWith(compareBy({ it.artist.lowercase() }, { it.title.lowercase() }))
+            SortMode.TITLE -> f.sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
+            SortMode.FILENAME -> f.sortedWith(FileOrder)
+            SortMode.ARTIST -> f.sortedWith(Comparator { a, b ->
+                NaturalOrder.compare(a.artist, b.artist).takeIf { it != 0 } ?: NaturalOrder.compare(a.title, b.title)
+            })
             SortMode.RECENT -> f.sortedByDescending { it.dateAdded }
             SortMode.DURATION -> f.sortedByDescending { it.durationMs }
         }
@@ -99,20 +109,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val albums: StateFlow<List<Group>> = tracks.map { list ->
         list.filter { it.album.isNotBlank() }.groupBy { it.album }
-            .map { (k, v) -> Group("a:$k", k, v.first().artist, v.firstNotNullOfOrNull { it.artUri }, v) }
-            .sortedBy { it.title.lowercase() }
+            .map { (k, v) -> Group("a:$k", k, v.first().artist, v.firstNotNullOfOrNull { it.artUri }, v.sortedWith(FileOrder)) }
+            .sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val artists: StateFlow<List<Group>> = tracks.map { list ->
         list.groupBy { it.artist }
             .map { (k, v) -> Group("r:$k", k, "", v.firstNotNullOfOrNull { it.artUri }, v) }
-            .sortedBy { it.title.lowercase() }
+            .sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val folders: StateFlow<List<Group>> = tracks.map { list ->
         list.groupBy { it.folder }
-            .map { (k, v) -> Group("f:$k", k.substringAfterLast('/'), k, v.firstNotNullOfOrNull { it.artUri }, v) }
-            .sortedBy { it.title.lowercase() }
+            .map { (k, v) -> Group("f:$k", k.substringAfterLast('/'), k, v.firstNotNullOfOrNull { it.artUri }, v.sortedWith(FileOrder)) }
+            .sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun rescan() {
@@ -174,6 +184,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val playlists = dao.observePlaylists()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val favoriteUris: StateFlow<Set<String>> = dao.observeFavoriteUris().map { it.toSet() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    val playlistUris: StateFlow<Set<String>> = dao.observePlaylistUris().map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     val playlistPicker = MutableStateFlow<List<Track>?>(null)
 
@@ -413,6 +425,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    fun stopPlayback() = withController { it.pause(); it.seekTo(0); it.stop() }
+
+    fun clearPlaylist(id: Long) = viewModelScope.launch { dao.clearPlaylist(id) }
 
     fun togglePlay() = withController {
         if (it.isPlaying) it.pause() else {

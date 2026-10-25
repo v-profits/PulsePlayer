@@ -101,6 +101,12 @@ interface PlaylistDao {
     @Query("DELETE FROM playlist_items WHERE playlistId = :pid AND uri = :uri")
     suspend fun deleteByUri(pid: Long, uri: String)
 
+    @Query("DELETE FROM playlist_items WHERE playlistId = :id")
+    suspend fun clearPlaylist(id: Long)
+
+    @Query("SELECT DISTINCT uri FROM playlist_items WHERE playlistId != 1")
+    fun observePlaylistUris(): Flow<List<String>>
+
     @Query("SELECT uri FROM playlist_items WHERE playlistId = 1")
     fun observeFavoriteUris(): Flow<List<String>>
 

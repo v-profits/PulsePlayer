@@ -140,4 +140,8 @@
     <string name="voice_unavailable">Голосовой ввод недоступен на этом устройстве</string>
     <string name="voice_prompt">Говорите</string>
     <string name="clear_text">Очистить текст</string>
+    <string name="sort_filename">По имени файла (1, 2 … 10)</string>
+    <string name="stop">Стоп</string>
+    <string name="open_fullscreen">Открыть на весь экран</string>
+    <string name="clear_confirm">Убрать все треки из этого списка?</string>
 </resources>

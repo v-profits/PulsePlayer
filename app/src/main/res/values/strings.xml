@@ -138,4 +138,8 @@
     <string name="voice_unavailable">Voice input is not available on this device</string>
     <string name="voice_prompt">Speak now</string>
     <string name="clear_text">Clear text</string>
+    <string name="sort_filename">By file name (1, 2 … 10)</string>
+    <string name="stop">Stop</string>
+    <string name="open_fullscreen">Open full screen</string>
+    <string name="clear_confirm">Remove all tracks from this list?</string>
 </resources>

@@ -28,6 +28,7 @@ class MediaScanner(private val ctx: Context) {
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.DATE_ADDED,
             MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.DISPLAY_NAME,
         )
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 1000"
         ctx.contentResolver.query(
@@ -46,6 +47,7 @@ class MediaScanner(private val ctx: Context) {
                     artUri = if (albumId > 0) ContentUris.withAppendedId(artBase, albumId).toString() else null,
                     dateAdded = c.getLong(6),
                     folder = c.getString(7)?.substringBeforeLast('/', "").orEmpty(),
+                    fileName = c.getString(8).orEmpty().substringBeforeLast('.'),
                 )
             }
         }
@@ -69,6 +71,7 @@ class MediaScanner(private val ctx: Context) {
                 album = meta(MediaMetadataRetriever.METADATA_KEY_ALBUM).orEmpty(),
                 durationMs = meta(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L,
                 artUri = r.embeddedPicture?.let { saveArt(uri, it) },
+                fileName = name,
                 dateAdded = System.currentTimeMillis() / 1000,
             )
         } catch (e: Exception) {
@@ -166,6 +169,7 @@ class MediaScanner(private val ctx: Context) {
         title = e.name.substringBeforeLast('.'),
         artist = "", album = "", durationMs = 0L, artUri = null,
         dateAdded = System.currentTimeMillis() / 1000, folder = folderName,
+        fileName = e.name.substringBeforeLast('.'),
     )
 
     private fun isAudioName(name: String?): Boolean =

@@ -104,6 +104,7 @@ fun TrackRow(
     playing: Boolean,
     selected: Boolean,
     favorite: Boolean,
+    inPlaylist: Boolean,
     canRemove: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -143,19 +144,27 @@ fun TrackRow(
             )
             val artist = track.artist.ifBlank { stringResource(R.string.unknown_artist) }
             Text(
-                if (track.album.isBlank()) artist else "$artist · ${track.album}",
+                if (track.durationMs > 0) "$artist · ${formatTime(track.durationMs)}" else artist,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant,
             )
         }
-        if (favorite) {
-            Icon(Icons.Rounded.Favorite, null, tint = cs.primary, modifier = Modifier.padding(horizontal = 4.dp).size(16.dp))
+        IconButton(onClick = { onAction(TrackAction.FAVORITE) }, Modifier.size(40.dp)) {
+            Icon(
+                if (favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add),
+                tint = if (favorite) cs.primary else cs.onSurfaceVariant,
+            )
         }
-        if (track.durationMs > 0) {
-            Text(formatTime(track.durationMs), style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+        IconButton(onClick = { onAction(TrackAction.ADD_TO_PLAYLIST) }, Modifier.size(40.dp)) {
+            Icon(
+                if (inPlaylist) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
+                stringResource(R.string.add_to_playlist),
+                tint = if (inPlaylist) cs.primary else cs.onSurfaceVariant,
+            )
         }
         Box {
-            IconButton(onClick = { menu = true }) {
+            IconButton(onClick = { menu = true }, Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options))
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -191,6 +200,7 @@ fun TrackList(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
+    val inPlaylists by vm.playlistUris.collectAsStateWithLifecycle()
     LazyColumn(modifier.fillMaxSize()) {
         if (header != null) item(key = "header") { header() }
         itemsIndexed(tracks, key = { i, t -> "$i|${t.uri}" }) { index, t ->
@@ -200,6 +210,7 @@ fun TrackList(
                 playing = ui.isPlaying,
                 selected = t.uri in selection.uris,
                 favorite = t.uri in favs,
+                inPlaylist = t.uri in inPlaylists,
                 canRemove = onRemove != null,
                 onClick = { if (selection.active) selection.toggle(t.uri) else vm.playTracks(tracks, index) },
                 onLongClick = { selection.toggle(t.uri) },

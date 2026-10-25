@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,15 +36,22 @@ import com.example.pulseplayer.data.AppSettings
 @Composable
 fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
     val pos by vm.position.collectAsStateWithLifecycle()
+    val favs by vm.favoriteUris.collectAsStateWithLifecycle()
+    val inPlaylists by vm.playlistUris.collectAsStateWithLifecycle()
     val t = ui.current ?: return
-    Column(Modifier.clickable(onClick = onOpen)) {
+    val fav = t.uri in favs
+    val inPl = t.uri in inPlaylists
+    Column {
         SeekBar(
             progress = if (ui.durationMs > 0) pos.toFloat() / ui.durationMs else 0f,
             onSeek = { vm.seekTo((it * ui.durationMs).toLong()) },
             modifier = Modifier.fillMaxWidth().height(24.dp).padding(horizontal = 4.dp),
             trackHeight = 3.dp, thumbRadius = 7.dp,
         )
-        Row(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.clickable(onClick = onOpen).padding(start = 12.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Artwork(t.artUri, Modifier.size(46.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -52,13 +60,44 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
                     overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { vm.previous() }) { Icon(Icons.Rounded.SkipPrevious, stringResource(R.string.previous)) }
-            FilledIconButton(onClick = { vm.togglePlay() }) {
+            IconButton(onClick = onOpen) { Icon(Icons.Rounded.OpenInFull, stringResource(R.string.open_fullscreen)) }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MiniBtn(Icons.Rounded.Shuffle, R.string.shuffle, ui.shuffle) { vm.toggleShuffle() }
+            MiniBtn(Icons.Rounded.SkipPrevious, R.string.previous) { vm.previous() }
+            FilledIconButton(onClick = { vm.togglePlay() }, Modifier.size(44.dp)) {
                 Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     stringResource(if (ui.isPlaying) R.string.pause else R.string.play))
             }
-            IconButton(onClick = { vm.next() }) { Icon(Icons.Rounded.SkipNext, stringResource(R.string.next)) }
+            MiniBtn(Icons.Rounded.Stop, R.string.stop) { vm.stopPlayback() }
+            MiniBtn(Icons.Rounded.SkipNext, R.string.next) { vm.next() }
+            MiniBtn(
+                if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                R.string.repeat, ui.repeat != Player.REPEAT_MODE_OFF,
+            ) { vm.cycleRepeat() }
+            MiniBtn(
+                if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                if (fav) R.string.favorite_remove else R.string.favorite_add, fav,
+            ) { vm.toggleFavorite(t) }
+            MiniBtn(
+                if (inPl) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
+                R.string.add_to_playlist, inPl,
+            ) { vm.pickPlaylistFor(listOf(t)) }
         }
+    }
+}
+
+@Composable
+private fun MiniBtn(icon: ImageVector, desc: Int, active: Boolean = false, onClick: () -> Unit) {
+    IconButton(onClick = onClick, Modifier.size(40.dp)) {
+        Icon(
+            icon, stringResource(desc), Modifier.size(22.dp),
+            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -73,6 +112,7 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
     val ui by vm.ui.collectAsStateWithLifecycle()
     val pos by vm.position.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
+    val inPlaylists by vm.playlistUris.collectAsStateWithLifecycle()
     val sleep by vm.sleepRemaining.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
@@ -128,6 +168,12 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
                                 stringResource(if (fav) R.string.favorite_remove else R.string.favorite_add),
                                 tint = if (fav) cs.primary else cs.onSurfaceVariant)
                         }
+                        val inPl = t.uri in inPlaylists
+                        IconButton(onClick = { vm.pickPlaylistFor(listOf(t)) }) {
+                            Icon(if (inPl) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
+                                stringResource(R.string.add_to_playlist),
+                                tint = if (inPl) cs.primary else cs.onSurfaceVariant)
+                        }
                     }
                 }
 
@@ -178,6 +224,7 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
                         Icon(Icons.Rounded.Bedtime, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp))
                         Text(sleep?.let { formatTime(it * 1000) } ?: stringResource(R.string.sleep_timer), maxLines = 1)
                     }
+                    IconButton(onClick = { vm.stopPlayback() }) { Icon(Icons.Rounded.Stop, stringResource(R.string.stop)) }
                     IconButton(onClick = onOpenEq) { Icon(Icons.Rounded.Tune, stringResource(R.string.equalizer)) }
                 }
             }

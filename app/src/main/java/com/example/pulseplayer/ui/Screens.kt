@@ -5,6 +5,7 @@ package com.example.pulseplayer.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,8 +33,19 @@ fun TrackListScreen(
     onBack: () -> Unit,
     onRemove: ((Track) -> Unit)? = null,
     emptyText: String? = null,
+    onClear: (() -> Unit)? = null,
 ) {
     val selection = remember { SelectionState() }
+    var confirmClear by remember { mutableStateOf(false) }
+    if (confirmClear && onClear != null) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(stringResource(R.string.clear_list)) },
+            text = { Text(stringResource(R.string.clear_confirm)) },
+            confirmButton = { TextButton(onClick = { confirmClear = false; onClear() }) { Text(stringResource(R.string.clear)) } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
     val selected = tracks.filter { it.uri in selection.uris }
     Column(Modifier.fillMaxSize()) {
         if (selection.active) {
@@ -53,7 +65,17 @@ fun TrackListScreen(
         if (tracks.isEmpty()) {
             EmptyState(Icons.Rounded.QueueMusic, emptyText ?: stringResource(R.string.library_empty))
         } else {
-            TrackList(tracks, vm, selection, header = { PlayShuffleRow(tracks, vm) }, onRemove = onRemove)
+            TrackList(
+                tracks, vm, selection,
+                header = {
+                    PlayShuffleRow(tracks, vm) {
+                        if (onClear != null) IconButton(onClick = { confirmClear = true }) {
+                            Icon(Icons.Rounded.DeleteSweep, stringResource(R.string.clear_list))
+                        }
+                    }
+                },
+                onRemove = onRemove,
+            )
         }
     }
 }
@@ -69,6 +91,7 @@ fun PlaylistScreen(id: Long, name: String, vm: MainViewModel, onBack: () -> Unit
         vm = vm,
         onBack = onBack,
         onRemove = { vm.removeFromPlaylist(id, it) },
+        onClear = { vm.clearPlaylist(id) },
         emptyText = stringResource(R.string.empty_playlist),
     )
 }

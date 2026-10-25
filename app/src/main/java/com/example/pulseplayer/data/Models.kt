@@ -13,6 +13,7 @@ data class Track(
     val artUri: String? = null,
     val dateAdded: Long = 0L,
     val folder: String = "",
+    val fileName: String = "",
 )
 
 fun Track.toMediaItem(): MediaItem = MediaItem.Builder()
