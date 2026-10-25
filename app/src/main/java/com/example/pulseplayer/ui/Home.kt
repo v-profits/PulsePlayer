@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.pulseplayer.R
+import com.example.pulseplayer.audio.EqualizerManager
 import com.example.pulseplayer.data.DocEntry
 import kotlinx.coroutines.launch
 
@@ -62,6 +63,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
     val sort by vm.sort.collectAsStateWithLifecycle()
     val tracks by vm.tracks.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
+    val eqState by EqualizerManager.state.collectAsStateWithLifecycle()
 
     val albums by vm.albums.collectAsStateWithLifecycle()
     val artists by vm.artists.collectAsStateWithLifecycle()
@@ -182,9 +184,8 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                         IconButton(onClick = { onOpen(Dest.Settings) }) {
                             Icon(Icons.Rounded.Settings, stringResource(R.string.settings))
                         }
-                        IconButton(onClick = { onOpen(Dest.Equalizer) }) {
-                            Icon(Icons.Rounded.Tune, stringResource(R.string.equalizer))
-                        }
+                        StateIconButton(Icons.Rounded.Tune, stringResource(R.string.equalizer), eqState.params.enabled,
+                            size = 48.dp, iconSize = 24.dp) { onOpen(Dest.Equalizer) }
                     }
                 },
             )

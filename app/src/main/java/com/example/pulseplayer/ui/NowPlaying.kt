@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.compose.ui.platform.LocalView
 import com.example.pulseplayer.R
+import com.example.pulseplayer.audio.EqualizerManager
 import com.example.pulseplayer.data.AppSettings
 
 @Composable
@@ -107,6 +108,7 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
     val pos by vm.position.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
     val inPlaylists by vm.playlistUris.collectAsStateWithLifecycle()
+    val eqState by EqualizerManager.state.collectAsStateWithLifecycle()
     val sleep by vm.sleepRemaining.collectAsStateWithLifecycle()
     var showQueue by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
@@ -217,7 +219,8 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
                         Text(sleep?.let { formatTime(it * 1000) } ?: stringResource(R.string.sleep_timer), maxLines = 1)
                     }
                     IconButton(onClick = { vm.stopPlayback() }) { Icon(Icons.Rounded.Stop, stringResource(R.string.stop)) }
-                    IconButton(onClick = onOpenEq) { Icon(Icons.Rounded.Tune, stringResource(R.string.equalizer)) }
+                    StateIconButton(Icons.Rounded.Tune, stringResource(R.string.equalizer), eqState.params.enabled,
+                        size = 48.dp, iconSize = 24.dp) { onOpenEq() }
                 }
             }
         }
