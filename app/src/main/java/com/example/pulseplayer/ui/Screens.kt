@@ -34,8 +34,10 @@ fun TrackListScreen(
     onRemove: ((Track) -> Unit)? = null,
     emptyText: String? = null,
     onClear: (() -> Unit)? = null,
+    isTop: Boolean = true,
 ) {
     val selection = remember { SelectionState() }
+    if (isTop) LaunchedEffect(tracks) { vm.contextTracks.value = tracks }
     var confirmClear by remember { mutableStateOf(false) }
     if (confirmClear && onClear != null) {
         AlertDialog(
@@ -57,7 +59,10 @@ fun TrackListScreen(
                 onPlayNext = { vm.playNext(selected); selection.clear() },
                 onQueue = { vm.addToQueue(selected); selection.clear() },
                 onPlaylist = { vm.pickPlaylistFor(selected); selection.clear() },
-                extra = listOf(R.string.fav_tracks_add to { vm.addToFavorites(selected); selection.clear() }),
+                extra = listOf(
+                    R.string.fav_tracks_add to { vm.addToFavorites(selected); selection.clear() },
+                    R.string.play_selected_repeat to { vm.playTracksRepeat(selected); selection.clear() },
+                ),
             )
         } else {
             TopAppBar(title = { Text(title, maxLines = 1) }, navigationIcon = { BackButton(onBack) })
@@ -81,7 +86,7 @@ fun TrackListScreen(
 }
 
 @Composable
-fun PlaylistScreen(id: Long, name: String, vm: MainViewModel, onBack: () -> Unit) {
+fun PlaylistScreen(id: Long, name: String, vm: MainViewModel, onBack: () -> Unit, isTop: Boolean = true) {
     val flow = remember(id) { vm.playlistItems(id) }
     val items by flow.collectAsStateWithLifecycle(initialValue = emptyList())
     val tracks = remember(items) { items.map { it.toTrack() } }
@@ -92,6 +97,7 @@ fun PlaylistScreen(id: Long, name: String, vm: MainViewModel, onBack: () -> Unit
         onBack = onBack,
         onRemove = { vm.removeFromPlaylist(id, it) },
         onClear = { vm.clearPlaylist(id) },
+        isTop = isTop,
         emptyText = stringResource(R.string.empty_playlist),
     )
 }

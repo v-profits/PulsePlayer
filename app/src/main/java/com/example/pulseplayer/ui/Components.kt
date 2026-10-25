@@ -5,6 +5,9 @@ package com.example.pulseplayer.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.media3.common.Player
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -90,6 +93,57 @@ fun Artwork(uri: String?, modifier: Modifier = Modifier, corner: Dp = 10.dp) {
     }
 }
 
+/** Вставка распознанной речи: добавляется к тексту; с заглавной в начале и после . ? ! */
+fun appendSpoken(current: String, spoken: String): String {
+    val s = spoken.trim()
+    if (s.isEmpty()) return current
+    val base = current.trimEnd()
+    val capitalize = base.isEmpty() || base.last() in ".?!"
+    var add = if (capitalize) s.replaceFirstChar { it.uppercase() } else s
+    add = Regex("([.!?]\\s+)(\\p{L})").replace(add) { it.groupValues[1] + it.groupValues[2].uppercase() }
+    return if (base.isEmpty()) add else "$base $add"
+}
+
+/** Кнопка-значок с понятным состоянием: включена — залитый круг и яркий значок, выключена — приглушённый, недоступна — бледный. */
+@Composable
+fun StateIconButton(
+    icon: ImageVector,
+    desc: String,
+    active: Boolean = false,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    size: Dp = 40.dp,
+    iconSize: Dp = 22.dp,
+    onClick: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val tint = when {
+        !enabled -> cs.onSurface.copy(alpha = 0.28f)
+        active -> cs.onPrimaryContainer
+        else -> cs.onSurfaceVariant
+    }
+    Box(
+        modifier.size(size).clip(CircleShape)
+            .background(if (active && enabled) cs.primaryContainer else Color.Transparent)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, desc, Modifier.size(iconSize), tint = tint) }
+}
+
+/** Кружок выбора: заполненный с галочкой — выбрано, пустое кольцо — не выбрано. */
+@Composable
+fun SelectionBadge(selected: Boolean, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        modifier.size(22.dp).clip(CircleShape)
+            .background(if (selected) cs.primary else cs.surface.copy(alpha = 0.8f))
+            .border(2.dp, if (selected) cs.primary else cs.outline, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) Icon(Icons.Rounded.Check, null, tint = cs.onPrimary, modifier = Modifier.size(14.dp))
+    }
+}
+
 @Composable
 fun BackButton(onBack: () -> Unit) {
     IconButton(onClick = onBack) {
@@ -103,6 +157,7 @@ fun TrackRow(
     current: Boolean,
     playing: Boolean,
     selected: Boolean,
+    selectionMode: Boolean,
     favorite: Boolean,
     inPlaylist: Boolean,
     canRemove: Boolean,
@@ -115,24 +170,22 @@ fun TrackRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .background(if (selected) cs.primaryContainer.copy(alpha = 0.6f) else Color.Transparent)
+            .padding(horizontal = 8.dp, vertical = 1.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) cs.secondaryContainer else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+            .padding(start = 8.dp, top = 6.dp, bottom = 6.dp, end = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(52.dp)) {
             Artwork(track.artUri, Modifier.fillMaxSize())
-            if (selected) {
-                Box(
-                    Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(cs.primary.copy(alpha = 0.75f)),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Rounded.Check, null, tint = cs.onPrimary) }
-            } else if (current) {
+            if (current) {
                 Box(
                     Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(Color.Black.copy(alpha = 0.45f)),
                     contentAlignment = Alignment.Center,
                 ) { Icon(if (playing) Icons.Rounded.GraphicEq else Icons.Rounded.Pause, null, tint = Color.White) }
             }
+            if (selectionMode) SelectionBadge(selected, Modifier.align(Alignment.BottomEnd).offset(5.dp, 5.dp))
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -140,29 +193,24 @@ fun TrackRow(
                 track.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (current) cs.primary else cs.onSurface,
+                color = when { selected -> cs.onSecondaryContainer; current -> cs.primary; else -> cs.onSurface },
             )
             val artist = track.artist.ifBlank { stringResource(R.string.unknown_artist) }
             Text(
                 if (track.durationMs > 0) "$artist · ${formatTime(track.durationMs)}" else artist,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (selected) cs.onSecondaryContainer.copy(alpha = 0.8f) else cs.onSurfaceVariant,
             )
         }
-        IconButton(onClick = { onAction(TrackAction.FAVORITE) }, Modifier.size(40.dp)) {
-            Icon(
-                if (favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add),
-                tint = if (favorite) cs.primary else cs.onSurfaceVariant,
-            )
-        }
-        IconButton(onClick = { onAction(TrackAction.ADD_TO_PLAYLIST) }, Modifier.size(40.dp)) {
-            Icon(
-                if (inPlaylist) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
-                stringResource(R.string.add_to_playlist),
-                tint = if (inPlaylist) cs.primary else cs.onSurfaceVariant,
-            )
-        }
+        StateIconButton(
+            if (favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add), favorite,
+        ) { onAction(TrackAction.FAVORITE) }
+        StateIconButton(
+            if (inPlaylist) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
+            stringResource(R.string.add_to_playlist), inPlaylist,
+        ) { onAction(TrackAction.ADD_TO_PLAYLIST) }
         Box {
             IconButton(onClick = { menu = true }, Modifier.size(40.dp)) {
                 Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options))
@@ -209,6 +257,7 @@ fun TrackList(
                 current = ui.current?.uri == t.uri,
                 playing = ui.isPlaying,
                 selected = t.uri in selection.uris,
+                selectionMode = selection.active,
                 favorite = t.uri in favs,
                 inPlaylist = t.uri in inPlaylists,
                 canRemove = onRemove != null,
@@ -230,25 +279,27 @@ fun TrackList(
 
 @Composable
 fun PlayShuffleRow(tracks: List<Track>, vm: MainViewModel, trailing: @Composable RowScope.() -> Unit = {}) {
+    val ui by vm.ui.collectAsStateWithLifecycle()
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Button(onClick = { vm.playTracks(tracks, 0, shuffle = false) }) {
-            Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.play))
+        FilledIconButton(onClick = { vm.playTracks(tracks, 0, shuffle = false) }) {
+            Icon(Icons.Rounded.PlayArrow, stringResource(R.string.play))
         }
-        FilledTonalButton(onClick = { vm.playTracks(tracks, shuffle = true) }) {
-            Icon(Icons.Rounded.Shuffle, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.shuffle))
+        FilledTonalIconButton(onClick = { vm.playTracks(tracks, shuffle = true) }) {
+            Icon(Icons.Rounded.Shuffle, stringResource(R.string.shuffle))
         }
+        StateIconButton(
+            if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+            stringResource(R.string.repeat), ui.repeat != Player.REPEAT_MODE_OFF,
+            size = 48.dp, iconSize = 24.dp,
+        ) { vm.cycleRepeat() }
         Spacer(Modifier.weight(1f))
         Text(
             quantityString(R.plurals.tracks_count, tracks.size),
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.labelLarge, maxLines = 1,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         trailing()
@@ -328,9 +379,10 @@ fun VoiceTextField(
     val prompt = stringResource(R.string.voice_prompt)
     val unavailable = stringResource(R.string.voice_unavailable)
     val currentOnChange by rememberUpdatedState(onValueChange)
+    val currentValue by rememberUpdatedState(value)
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         if (r.resultCode == Activity.RESULT_OK) {
-            r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { currentOnChange(it) }
+            r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { currentOnChange(appendSpoken(currentValue, it)) }
         }
     }
     val trailing: @Composable () -> Unit = {
@@ -410,7 +462,7 @@ fun AddToPlaylistDialog(tracks: List<Track>, vm: MainViewModel, onDismiss: () ->
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
                 }
-                itemsIndexed(lists, key = { _, p -> p.playlist.id }) { _, p ->
+                itemsIndexed(lists.filter { !it.playlist.isSystem }, key = { _, p -> p.playlist.id }) { _, p ->
                     ListItem(
                         headlineContent = {
                             Text(if (p.playlist.isSystem) stringResource(R.string.favorites) else p.playlist.name)

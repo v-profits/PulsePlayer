@@ -121,7 +121,7 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
                             }
                         },
                         colors = ListItemDefaults.colors(
-                            containerColor = if (sel) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
+                            containerColor = if (sel) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
                         ),
                         modifier = Modifier.combinedClickable(
                             onClick = {

@@ -52,7 +52,7 @@ enum class HomeTab(val label: Int) {
 private val AUDIO_MIME = arrayOf("audio/*", "application/ogg", "application/x-flac", "application/flac")
 
 @Composable
-fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, onOpen: (Dest) -> Unit) {
+fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: Boolean, onOpen: (Dest) -> Unit) {
     val tabs = HomeTab.entries
     val pager = rememberPagerState { tabs.size }
     val scope = rememberCoroutineScope()
@@ -86,6 +86,14 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, onOpen:
         groups.filter { it.key in groupSel.uris }.flatMap { it.tracks }.distinctBy { it.uri }
     } else tracks.filter { it.uri in selection.uris }
     val anySelection = selection.active || groupSel.active
+    val contextList = remember(tab, tracks, groups) {
+        when {
+            tab == HomeTab.TRACKS -> tracks
+            isGroupTab -> groups.flatMap { it.tracks }.distinctBy { it.uri }
+            else -> emptyList()
+        }
+    }
+    if (isTop) LaunchedEffect(contextList) { vm.contextTracks.value = contextList }
     val clearAll = { selection.clear(); groupSel.clear() }
 
     LaunchedEffect(page) { clearAll() }
@@ -125,6 +133,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, onOpen:
                     R.string.fav_tracks_add to { vm.browserAction(selectedFolders, "", BrowserAction.FAV_TRACKS); clearAll() },
                 ) else listOf(
                     R.string.fav_tracks_add to { vm.addToFavorites(selectedTracks); clearAll() },
+                    R.string.play_selected_repeat to { vm.playTracksRepeat(selectedTracks); clearAll() },
                 ),
             )
         } else {
@@ -237,43 +246,44 @@ private fun LibraryGate(granted: Boolean, onGrant: () -> Unit, content: @Composa
     }
 }
 
-@Composable
-private fun SelectedOverlay(corner: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
-    Box(
-        modifier.clip(RoundedCornerShape(corner)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
-        contentAlignment = Alignment.Center,
-    ) { Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.onPrimary) }
-}
-
 /** Альбомы/исполнители/папки: долгое нажатие — выбор нескольких без открытия. */
 @Composable
 private fun GroupGrid(groups: List<Group>, blankLabel: Int, selection: SelectionState, onOpen: (Group) -> Unit) {
     if (groups.isEmpty()) { EmptyState(Icons.Rounded.Album, stringResource(R.string.library_empty)); return }
+    val cs = MaterialTheme.colorScheme
     LazyVerticalGrid(
         GridCells.Adaptive(150.dp),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(groups, key = { it.key }) { g ->
             val selected = g.key in selection.uris
-            Column(
-                Modifier.clip(RoundedCornerShape(18.dp)).combinedClickable(
-                    onClick = { if (selection.active) selection.toggle(g.key) else onOpen(g) },
-                    onLongClick = { selection.toggle(g.key) },
-                )
+            CompositionLocalProvider(
+                LocalContentColor provides if (selected) cs.onSecondaryContainer else LocalContentColor.current
             ) {
-                Box {
-                    Artwork(g.artUri, Modifier.fillMaxWidth().aspectRatio(1f), corner = 18.dp)
-                    if (selected) SelectedOverlay(18.dp, Modifier.matchParentSize())
+                Column(
+                    Modifier.clip(RoundedCornerShape(20.dp))
+                        .background(if (selected) cs.secondaryContainer else Color.Transparent)
+                        .combinedClickable(
+                            onClick = { if (selection.active) selection.toggle(g.key) else onOpen(g) },
+                            onLongClick = { selection.toggle(g.key) },
+                        )
+                        .padding(8.dp)
+                ) {
+                    Box {
+                        Artwork(g.artUri, Modifier.fillMaxWidth().aspectRatio(1f), corner = 14.dp)
+                        if (selection.active) SelectionBadge(selected, Modifier.align(Alignment.TopEnd).padding(6.dp))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(g.title.ifBlank { stringResource(blankLabel) }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleSmall)
+                    val artist = g.subtitle.ifBlank { stringResource(R.string.unknown_artist) }
+                    Text("$artist · ${quantityString(R.plurals.tracks_count, g.tracks.size)}",
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (selected) cs.onSecondaryContainer.copy(alpha = 0.8f) else cs.onSurfaceVariant)
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(g.title.ifBlank { stringResource(blankLabel) }, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleSmall)
-                val artist = g.subtitle.ifBlank { stringResource(R.string.unknown_artist) }
-                Text("$artist · ${quantityString(R.plurals.tracks_count, g.tracks.size)}",
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -287,6 +297,7 @@ private fun GroupList(
     onOpen: (Group) -> Unit,
 ) {
     if (groups.isEmpty()) { EmptyState(icon, stringResource(R.string.library_empty)); return }
+    val cs = MaterialTheme.colorScheme
     val corner = if (icon == Icons.Rounded.Person) 26.dp else 10.dp
     LazyColumn(Modifier.fillMaxSize()) {
         items(groups, key = { it.key }) { g ->
@@ -300,16 +311,21 @@ private fun GroupList(
                 leadingContent = {
                     Box(Modifier.size(52.dp)) {
                         Artwork(g.artUri, Modifier.fillMaxSize(), corner = corner)
-                        if (selected) SelectedOverlay(corner, Modifier.fillMaxSize())
+                        if (selection.active) SelectionBadge(selected, Modifier.align(Alignment.BottomEnd).offset(5.dp, 5.dp))
                     }
                 },
                 colors = ListItemDefaults.colors(
-                    containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
+                    containerColor = if (selected) cs.secondaryContainer else Color.Transparent,
+                    headlineColor = if (selected) cs.onSecondaryContainer else cs.onSurface,
+                    supportingColor = if (selected) cs.onSecondaryContainer.copy(alpha = 0.8f) else cs.onSurfaceVariant,
                 ),
-                modifier = Modifier.combinedClickable(
-                    onClick = { if (selection.active) selection.toggle(g.key) else onOpen(g) },
-                    onLongClick = { selection.toggle(g.key) },
-                ),
+                modifier = Modifier
+                    .padding(horizontal = 8.dp, vertical = 1.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .combinedClickable(
+                        onClick = { if (selection.active) selection.toggle(g.key) else onOpen(g) },
+                        onLongClick = { selection.toggle(g.key) },
+                    ),
             )
         }
     }
@@ -411,7 +427,7 @@ private fun FilesTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: Selec
                 }
             },
             colors = ListItemDefaults.colors(
-                containerColor = if (sel) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
+                containerColor = if (sel) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
             ),
             modifier = Modifier.combinedClickable(
                 onClick = { if (selection.active) selection.toggle(f.uri) else onOpen(Dest.Browse(f.uri, f.name)) },

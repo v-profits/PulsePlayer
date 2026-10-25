@@ -38,13 +38,14 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
     val pos by vm.position.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
     val inPlaylists by vm.playlistUris.collectAsStateWithLifecycle()
-    val t = ui.current ?: return
-    val fav = t.uri in favs
-    val inPl = t.uri in inPlaylists
+    val t = ui.current
+    val has = t != null
+    val fav = t != null && t.uri in favs
+    val inPl = t != null && t.uri in inPlaylists
     Column {
         SeekBar(
-            progress = if (ui.durationMs > 0) pos.toFloat() / ui.durationMs else 0f,
-            onSeek = { vm.seekTo((it * ui.durationMs).toLong()) },
+            progress = if (has && ui.durationMs > 0) pos.toFloat() / ui.durationMs else 0f,
+            onSeek = { if (has) vm.seekTo((it * ui.durationMs).toLong()) },
             modifier = Modifier.fillMaxWidth().height(24.dp).padding(horizontal = 4.dp),
             trackHeight = 3.dp, thumbRadius = 7.dp,
         )
@@ -52,12 +53,15 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
             Modifier.clickable(onClick = onOpen).padding(start = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Artwork(t.artUri, Modifier.size(46.dp))
+            Artwork(t?.artUri, Modifier.size(46.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                Text(t.artist.ifBlank { stringResource(R.string.unknown_artist) }, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
+                Text(t?.title ?: stringResource(R.string.stopped), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (t != null) t.artist.ifBlank { stringResource(R.string.unknown_artist) }
+                    else stringResource(R.string.stopped_hint),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onOpen) { Icon(Icons.Rounded.OpenInFull, stringResource(R.string.open_fullscreen)) }
@@ -67,37 +71,27 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MiniBtn(Icons.Rounded.Shuffle, R.string.shuffle, ui.shuffle) { vm.toggleShuffle() }
-            MiniBtn(Icons.Rounded.SkipPrevious, R.string.previous) { vm.previous() }
+            StateIconButton(Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle) { vm.toggleShuffle() }
+            StateIconButton(Icons.Rounded.SkipPrevious, stringResource(R.string.previous), enabled = has) { vm.previous() }
             FilledIconButton(onClick = { vm.togglePlay() }, Modifier.size(44.dp)) {
                 Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     stringResource(if (ui.isPlaying) R.string.pause else R.string.play))
             }
-            MiniBtn(Icons.Rounded.Stop, R.string.stop) { vm.stopPlayback() }
-            MiniBtn(Icons.Rounded.SkipNext, R.string.next) { vm.next() }
-            MiniBtn(
+            StateIconButton(Icons.Rounded.Stop, stringResource(R.string.stop), enabled = has) { vm.stopPlayback() }
+            StateIconButton(Icons.Rounded.SkipNext, stringResource(R.string.next), enabled = has) { vm.next() }
+            StateIconButton(
                 if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                R.string.repeat, ui.repeat != Player.REPEAT_MODE_OFF,
+                stringResource(R.string.repeat), ui.repeat != Player.REPEAT_MODE_OFF,
             ) { vm.cycleRepeat() }
-            MiniBtn(
+            StateIconButton(
                 if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                if (fav) R.string.favorite_remove else R.string.favorite_add, fav,
-            ) { vm.toggleFavorite(t) }
-            MiniBtn(
+                stringResource(if (fav) R.string.favorite_remove else R.string.favorite_add), fav, enabled = has,
+            ) { t?.let { vm.toggleFavorite(it) } }
+            StateIconButton(
                 if (inPl) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
-                R.string.add_to_playlist, inPl,
-            ) { vm.pickPlaylistFor(listOf(t)) }
+                stringResource(R.string.add_to_playlist), inPl, enabled = has,
+            ) { t?.let { vm.pickPlaylistFor(listOf(it)) } }
         }
-    }
-}
-
-@Composable
-private fun MiniBtn(icon: ImageVector, desc: Int, active: Boolean = false, onClick: () -> Unit) {
-    IconButton(onClick = onClick, Modifier.size(40.dp)) {
-        Icon(
-            icon, stringResource(desc), Modifier.size(22.dp),
-            tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -163,17 +157,17 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
                     }
                     if (t != null) {
                         val fav = t.uri in favs
-                        IconButton(onClick = { vm.toggleFavorite(t) }) {
-                            Icon(if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                stringResource(if (fav) R.string.favorite_remove else R.string.favorite_add),
-                                tint = if (fav) cs.primary else cs.onSurfaceVariant)
-                        }
+                        StateIconButton(
+                            if (fav) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                            stringResource(if (fav) R.string.favorite_remove else R.string.favorite_add), fav,
+                            size = 46.dp, iconSize = 24.dp,
+                        ) { vm.toggleFavorite(t) }
                         val inPl = t.uri in inPlaylists
-                        IconButton(onClick = { vm.pickPlaylistFor(listOf(t)) }) {
-                            Icon(if (inPl) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
-                                stringResource(R.string.add_to_playlist),
-                                tint = if (inPl) cs.primary else cs.onSurfaceVariant)
-                        }
+                        StateIconButton(
+                            if (inPl) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
+                            stringResource(R.string.add_to_playlist), inPl,
+                            size = 46.dp, iconSize = 24.dp,
+                        ) { vm.pickPlaylistFor(listOf(t)) }
                     }
                 }
 
@@ -193,10 +187,8 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
 
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically) {
-                    IconToggleButton(checked = ui.shuffle, onCheckedChange = { vm.toggleShuffle() }) {
-                        Icon(Icons.Rounded.Shuffle, stringResource(R.string.shuffle),
-                            tint = if (ui.shuffle) cs.primary else cs.onSurfaceVariant)
-                    }
+                    StateIconButton(Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle,
+                        size = 48.dp, iconSize = 26.dp) { vm.toggleShuffle() }
                     IconButton(onClick = { vm.previous() }, Modifier.size(56.dp)) {
                         Icon(Icons.Rounded.SkipPrevious, stringResource(R.string.previous), Modifier.size(36.dp))
                     }
@@ -207,11 +199,11 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
                     IconButton(onClick = { vm.next() }, Modifier.size(56.dp)) {
                         Icon(Icons.Rounded.SkipNext, stringResource(R.string.next), Modifier.size(36.dp))
                     }
-                    IconButton(onClick = { vm.cycleRepeat() }) {
-                        Icon(if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                            stringResource(R.string.repeat),
-                            tint = if (ui.repeat != Player.REPEAT_MODE_OFF) cs.primary else cs.onSurfaceVariant)
-                    }
+                    StateIconButton(
+                        if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+                        stringResource(R.string.repeat), ui.repeat != Player.REPEAT_MODE_OFF,
+                        size = 48.dp, iconSize = 26.dp,
+                    ) { vm.cycleRepeat() }
                 }
 
                 Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly,

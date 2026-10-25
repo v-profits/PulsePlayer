@@ -144,4 +144,7 @@
     <string name="stop">Стоп</string>
     <string name="open_fullscreen">Открыть на весь экран</string>
     <string name="clear_confirm">Убрать все треки из этого списка?</string>
+    <string name="stopped">Остановлено</string>
+    <string name="stopped_hint">Нажмите ▶, чтобы начать с первого трека</string>
+    <string name="play_selected_repeat">Играть выбранные по кругу</string>
 </resources>

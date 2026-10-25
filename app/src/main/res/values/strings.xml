@@ -142,4 +142,7 @@
     <string name="stop">Stop</string>
     <string name="open_fullscreen">Open full screen</string>
     <string name="clear_confirm">Remove all tracks from this list?</string>
+    <string name="stopped">Stopped</string>
+    <string name="stopped_hint">Press play to start from the first track</string>
+    <string name="play_selected_repeat">Play selected on repeat</string>
 </resources>

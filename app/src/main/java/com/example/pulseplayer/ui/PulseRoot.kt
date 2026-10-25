@@ -37,6 +37,7 @@ fun PulseRoot(vm: MainViewModel) {
     var showNow by rememberSaveable { mutableStateOf(false) }
     val snack = remember { SnackbarHostState() }
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val stopped by vm.stopped.collectAsStateWithLifecycle()
     val picker by vm.playlistPicker.collectAsStateWithLifecycle()
 
     val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
@@ -67,28 +68,30 @@ fun PulseRoot(vm: MainViewModel) {
             contentWindowInsets = WindowInsets(0),
             bottomBar = {
                 Column(Modifier.background(MaterialTheme.colorScheme.surfaceContainer)) {
-                    if (ui.current != null) MiniPlayer(ui, vm) { showNow = true }
+                    if (ui.current != null || stopped) MiniPlayer(ui, vm) { showNow = true }
                     Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
                 }
             },
         ) { pad ->
             Box(Modifier.padding(pad).fillMaxSize()) {
                 // Главный экран всегда остаётся в композиции: вкладка и позиция прокрутки сохраняются.
-                HomeScreen(vm, granted, { permLauncher.launch(perm) }) { push(it) }
+                HomeScreen(vm, granted, { permLauncher.launch(perm) }, stack.isEmpty()) { push(it) }
 
                 // Открытые экраны лежат слоями поверх; нижние не выгружаются,
                 // поэтому «Назад» возвращает ровно на прежнюю позицию.
                 stack.forEach { entry ->
                     key(entry.id) {
                         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                            val top = entry === stack.lastOrNull()
                             when (val d = entry.dest) {
-                                is Dest.Tracks -> TrackListScreen(d.title, d.tracks, vm, pop)
-                                is Dest.Playlist -> PlaylistScreen(d.id, d.name, vm, pop)
+                                is Dest.Tracks -> TrackListScreen(d.title, d.tracks, vm, pop, isTop = top)
+                                is Dest.Playlist -> PlaylistScreen(d.id, d.name, vm, pop, top)
                                 is Dest.Browse -> BrowseScreen(vm, d, pop) { push(it) }
                                 Dest.Picked -> {
                                     val pk by vm.picked.collectAsStateWithLifecycle()
                                     TrackListScreen(
                                         stringResource(R.string.selected_files), pk, vm, pop,
+                                        isTop = top,
                                         onRemove = { vm.removePicked(it) },
                                         emptyText = stringResource(R.string.files_empty_title),
                                     )

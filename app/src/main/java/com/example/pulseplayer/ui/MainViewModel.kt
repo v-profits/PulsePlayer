@@ -360,6 +360,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun sync(p: Player, rebuildQueue: Boolean) {
+        if (p.mediaItemCount > 0) _stopped.value = false
         val old = _ui.value
         val queue = if (rebuildQueue) List(p.mediaItemCount) { p.getMediaItemAt(it).toTrack() } else old.queue
         val base = p.currentMediaItem?.toTrack()
@@ -426,11 +427,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun stopPlayback() = withController { it.pause(); it.seekTo(0); it.stop() }
+    /** Список открытой вкладки/экрана: с его первого трека стартует «Плей» после полной остановки. */
+    val contextTracks = MutableStateFlow<List<Track>>(emptyList())
+    private val _stopped = MutableStateFlow(false)
+    val stopped: StateFlow<Boolean> = _stopped.asStateFlow()
+
+    /** Полный стоп: остановка, очередь очищается, позиция сбрасывается. */
+    fun stopPlayback() {
+        _stopped.value = true
+        withController { it.pause(); it.stop(); it.clearMediaItems() }
+    }
+
+    fun playContext() {
+        val list = contextTracks.value.ifEmpty { tracks.value }
+        if (list.isEmpty()) return
+        _stopped.value = false
+        playTracks(list, 0)
+    }
+
+    fun playTracksRepeat(list: List<Track>) {
+        playTracks(list, 0)
+        withController { it.repeatMode = Player.REPEAT_MODE_ALL }
+    }
 
     fun clearPlaylist(id: Long) = viewModelScope.launch { dao.clearPlaylist(id) }
 
     fun togglePlay() = withController {
+        if (_ui.value.current == null) { playContext(); return@withController }
         if (it.isPlaying) it.pause() else {
             if (it.playbackState == Player.STATE_IDLE) it.prepare()
             if (it.playbackState == Player.STATE_ENDED) it.seekTo(0)
