@@ -134,10 +134,10 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, onOpen:
             TopAppBar(
                 title = {
                     if (searching) {
-                        TextField(
+                        VoiceTextField(
                             value = query, onValueChange = { vm.query.value = it },
-                            singleLine = true,
-                            placeholder = { Text(stringResource(R.string.search_hint)) },
+                            placeholder = stringResource(R.string.search_hint),
+                            outlined = false,
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedContainerColor = Color.Transparent,
@@ -170,8 +170,8 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, onOpen:
                                 }
                             }
                         }
-                        IconButton(onClick = { vm.refreshLibrary() }) {
-                            Icon(Icons.Rounded.Refresh, stringResource(R.string.rescan))
+                        IconButton(onClick = { onOpen(Dest.Settings) }) {
+                            Icon(Icons.Rounded.Settings, stringResource(R.string.settings))
                         }
                         IconButton(onClick = { onOpen(Dest.Equalizer) }) {
                             Icon(Icons.Rounded.Tune, stringResource(R.string.equalizer))

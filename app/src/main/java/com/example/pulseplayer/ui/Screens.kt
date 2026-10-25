@@ -21,6 +21,7 @@ sealed interface Dest {
     data class Browse(val uri: String, val name: String) : Dest
     data object Picked : Dest
     data object Equalizer : Dest
+    data object Settings : Dest
 }
 
 @Composable

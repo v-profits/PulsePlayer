@@ -28,7 +28,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
+import androidx.compose.ui.platform.LocalView
 import com.example.pulseplayer.R
+import com.example.pulseplayer.data.AppSettings
 
 @Composable
 fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
@@ -62,6 +64,12 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
 
 @Composable
 fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Unit) {
+    val keepOn by AppSettings.keepScreenOn.collectAsStateWithLifecycle()
+    val view = LocalView.current
+    DisposableEffect(keepOn) {
+        view.keepScreenOn = keepOn
+        onDispose { view.keepScreenOn = false }
+    }
     val ui by vm.ui.collectAsStateWithLifecycle()
     val pos by vm.position.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()

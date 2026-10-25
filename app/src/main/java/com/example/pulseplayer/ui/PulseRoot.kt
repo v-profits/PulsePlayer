@@ -94,6 +94,7 @@ fun PulseRoot(vm: MainViewModel) {
                                     )
                                 }
                                 Dest.Equalizer -> EqualizerScreen(pop)
+                                Dest.Settings -> SettingsScreen(vm, pop)
                             }
                         }
                     }

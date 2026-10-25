@@ -37,6 +37,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.AsyncImage
 import com.example.pulseplayer.R
 import com.example.pulseplayer.data.Track
@@ -293,6 +300,63 @@ fun EmptyState(icon: ImageVector, title: String, desc: String? = null, action: (
     }
 }
 
+/**
+ * Поле ввода с кнопками «очистить» (крестик, когда есть текст) и «голосовой ввод» (системное распознавание речи).
+ */
+@Composable
+fun VoiceTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String? = null,
+    placeholder: String? = null,
+    outlined: Boolean = true,
+    colors: TextFieldColors? = null,
+) {
+    val ctx = LocalContext.current
+    val prompt = stringResource(R.string.voice_prompt)
+    val unavailable = stringResource(R.string.voice_unavailable)
+    val currentOnChange by rememberUpdatedState(onValueChange)
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        if (r.resultCode == Activity.RESULT_OK) {
+            r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { currentOnChange(it) }
+        }
+    }
+    val trailing: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (value.isNotEmpty()) {
+                IconButton(onClick = { onValueChange("") }) {
+                    Icon(Icons.Rounded.Close, stringResource(R.string.clear_text))
+                }
+            }
+            IconButton(onClick = {
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, ctx.resources.configuration.locales[0].toLanguageTag())
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
+                }
+                try { launcher.launch(intent) } catch (e: ActivityNotFoundException) {
+                    Toast.makeText(ctx, unavailable, Toast.LENGTH_SHORT).show()
+                }
+            }) { Icon(Icons.Rounded.Mic, stringResource(R.string.voice_input)) }
+        }
+    }
+    val labelSlot: (@Composable () -> Unit)? = label?.let { { Text(it) } }
+    val placeholderSlot: (@Composable () -> Unit)? = placeholder?.let { { Text(it) } }
+    if (outlined) {
+        OutlinedTextField(
+            value = value, onValueChange = onValueChange, modifier = modifier, singleLine = true,
+            label = labelSlot, placeholder = placeholderSlot, trailingIcon = trailing,
+        )
+    } else {
+        TextField(
+            value = value, onValueChange = onValueChange, modifier = modifier, singleLine = true,
+            label = labelSlot, placeholder = placeholderSlot, trailingIcon = trailing,
+            colors = colors ?: TextFieldDefaults.colors(),
+        )
+    }
+}
+
 @Composable
 fun NameDialog(titleRes: Int, initial: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
     var text by remember { mutableStateOf(initial) }
@@ -300,9 +364,9 @@ fun NameDialog(titleRes: Int, initial: String, onDismiss: () -> Unit, onConfirm:
         onDismissRequest = onDismiss,
         title = { Text(stringResource(titleRes)) },
         text = {
-            OutlinedTextField(
-                value = text, onValueChange = { text = it }, singleLine = true,
-                label = { Text(stringResource(R.string.playlist_name)) },
+            VoiceTextField(
+                value = text, onValueChange = { text = it },
+                label = stringResource(R.string.playlist_name),
             )
         },
         confirmButton = {

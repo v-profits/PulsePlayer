@@ -2,15 +2,16 @@ package com.example.pulseplayer
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
 import com.example.pulseplayer.ui.MainViewModel
 import com.example.pulseplayer.ui.PulseRoot
 import com.example.pulseplayer.ui.theme.PulseTheme
 
-class MainActivity : ComponentActivity() {
+// AppCompatActivity нужен для переключения языка приложения (per-app locales) на всех версиях Android.
+class MainActivity : AppCompatActivity() {
     private val vm: MainViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {

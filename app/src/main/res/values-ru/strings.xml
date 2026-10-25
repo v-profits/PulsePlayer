@@ -115,4 +115,29 @@
         <item quantity="other">%d трека</item>
     </plurals>
     <string name="playback_error">Не удаётся воспроизвести файл (%s)</string>
+    <string name="settings">Настройки</string>
+    <string name="settings_appearance">Оформление</string>
+    <string name="settings_theme">Тема</string>
+    <string name="theme_system">Как в системе</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="settings_language">Язык</string>
+    <string name="lang_system">Как в системе</string>
+    <string name="lang_en">English</string>
+    <string name="lang_ru">Русский</string>
+    <string name="settings_library">Библиотека</string>
+    <string name="settings_min_length">Скрывать короткие треки</string>
+    <string name="min_len_off">Показывать все</string>
+    <string name="seconds_fmt">Короче %d с</string>
+    <string name="settings_playback">Воспроизведение</string>
+    <string name="settings_keep_screen">Не гасить экран</string>
+    <string name="settings_keep_screen_desc">Пока открыт экран плеера</string>
+    <string name="settings_about">О приложении</string>
+    <string name="about_version">Версия %s</string>
+    <string name="about_desc">Офлайн-плеер для ваших собственных файлов</string>
+    <string name="msg_rescan">Обновление библиотеки…</string>
+    <string name="voice_input">Голосовой ввод</string>
+    <string name="voice_unavailable">Голосовой ввод недоступен на этом устройстве</string>
+    <string name="voice_prompt">Говорите</string>
+    <string name="clear_text">Очистить текст</string>
 </resources>

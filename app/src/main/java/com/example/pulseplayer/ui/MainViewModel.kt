@@ -16,6 +16,7 @@ import androidx.media3.session.SessionToken
 import com.example.pulseplayer.PlaybackService
 import com.example.pulseplayer.R
 import com.example.pulseplayer.data.AppDb
+import com.example.pulseplayer.data.AppSettings
 import com.example.pulseplayer.data.DocEntry
 import com.example.pulseplayer.data.FAVORITES_ID
 import com.example.pulseplayer.data.FolderEntity
@@ -83,7 +84,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val query = MutableStateFlow("")
     val sort = MutableStateFlow(SortMode.TITLE)
 
-    val tracks: StateFlow<List<Track>> = combine(_library, query, sort) { lib, q, s ->
+    val tracks: StateFlow<List<Track>> = combine(_library, query, sort, AppSettings.minLength) { all, q, s, minLen ->
+        val lib = if (minLen > 0) all.filter { it.durationMs >= minLen * 1000L } else all
         val f = if (q.isBlank()) lib else lib.filter {
             it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)
         }
@@ -112,6 +114,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .map { (k, v) -> Group("f:$k", k.substringAfterLast('/'), k, v.firstNotNullOfOrNull { it.artUri }, v) }
             .sortedBy { it.title.lowercase() }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun rescan() {
+        _messages.tryEmit(R.string.msg_rescan)
+        refreshLibrary()
+    }
 
     fun refreshLibrary() {
         viewModelScope.launch {
