@@ -18,13 +18,22 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import com.example.pulseplayer.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+/** Запись в стеке навигации. Уникальный id нужен, чтобы состояние экрана (прокрутка и т.д.) не путалось. */
+private class NavEntry(val id: Int, val dest: Dest)
 
 @Composable
 fun PulseRoot(vm: MainViewModel) {
     val ctx = LocalContext.current
-    val stack = remember { mutableStateListOf<Dest>() }
+    val stack = remember { mutableStateListOf<NavEntry>() }
+    val nextId = remember { intArrayOf(0) }
+    val push: (Dest) -> Unit = { stack.add(NavEntry(nextId[0]++, it)) }
+    val pop: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
+
     var showNow by rememberSaveable { mutableStateOf(false) }
     val snack = remember { SnackbarHostState() }
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -47,8 +56,9 @@ fun PulseRoot(vm: MainViewModel) {
         }
     }
     LaunchedEffect(Unit) { vm.messages.collect { snack.showSnackbar(ctx.getString(it)) } }
+    LaunchedEffect(Unit) { vm.errors.collect { snack.showSnackbar(ctx.getString(R.string.playback_error, it)) } }
 
-    BackHandler(enabled = stack.isNotEmpty()) { stack.removeAt(stack.lastIndex) }
+    BackHandler(enabled = stack.isNotEmpty()) { pop() }
     BackHandler(enabled = showNow) { showNow = false }
 
     Box(Modifier.fillMaxSize()) {
@@ -63,11 +73,30 @@ fun PulseRoot(vm: MainViewModel) {
             },
         ) { pad ->
             Box(Modifier.padding(pad).fillMaxSize()) {
-                when (val d = stack.lastOrNull()) {
-                    null -> HomeScreen(vm, granted, { permLauncher.launch(perm) }) { stack.add(it) }
-                    is Dest.Tracks -> TrackListScreen(d.title, d.tracks, vm, { stack.removeAt(stack.lastIndex) })
-                    is Dest.Playlist -> PlaylistScreen(d.id, d.name, vm) { stack.removeAt(stack.lastIndex) }
-                    Dest.Equalizer -> EqualizerScreen { stack.removeAt(stack.lastIndex) }
+                // Главный экран всегда остаётся в композиции: вкладка и позиция прокрутки сохраняются.
+                HomeScreen(vm, granted, { permLauncher.launch(perm) }) { push(it) }
+
+                // Открытые экраны лежат слоями поверх; нижние не выгружаются,
+                // поэтому «Назад» возвращает ровно на прежнюю позицию.
+                stack.forEach { entry ->
+                    key(entry.id) {
+                        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                            when (val d = entry.dest) {
+                                is Dest.Tracks -> TrackListScreen(d.title, d.tracks, vm, pop)
+                                is Dest.Playlist -> PlaylistScreen(d.id, d.name, vm, pop)
+                                is Dest.Browse -> BrowseScreen(vm, d, pop) { push(it) }
+                                Dest.Picked -> {
+                                    val pk by vm.picked.collectAsStateWithLifecycle()
+                                    TrackListScreen(
+                                        stringResource(R.string.selected_files), pk, vm, pop,
+                                        onRemove = { vm.removePicked(it) },
+                                        emptyText = stringResource(R.string.files_empty_title),
+                                    )
+                                }
+                                Dest.Equalizer -> EqualizerScreen(pop)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -79,7 +108,7 @@ fun PulseRoot(vm: MainViewModel) {
         ) {
             NowPlayingScreen(vm, onClose = { showNow = false }, onOpenEq = {
                 showNow = false
-                if (stack.lastOrNull() != Dest.Equalizer) stack.add(Dest.Equalizer)
+                if (stack.lastOrNull()?.dest != Dest.Equalizer) push(Dest.Equalizer)
             })
         }
 

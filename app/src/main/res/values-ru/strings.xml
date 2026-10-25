@@ -52,9 +52,9 @@
     <string name="delete_playlist_title">Удалить плейлист?</string>
     <string name="empty_playlist">Плейлист пуст</string>
     <string name="files_pick_files">Выбрать файлы</string>
-    <string name="files_pick_folder">Выбрать папку</string>
+    <string name="files_pick_folder">Добавить папку</string>
     <string name="files_empty_title">Файлы не выбраны</string>
-    <string name="files_empty_desc">Выберите несколько аудиофайлов или целую папку — поддерживается любой формат, который умеет декодировать Android.</string>
+    <string name="files_empty_desc">Добавьте папку или выберите несколько аудиофайлов — поддерживается любой формат, который умеет декодировать Android.</string>
     <string name="clear_list">Очистить список</string>
     <string name="importing">Чтение файлов…</string>
     <string name="permission_title">Доступ к вашей музыке</string>
@@ -78,11 +78,41 @@
     <string name="msg_added_queue">Добавлено в очередь</string>
     <string name="msg_play_next">Будет играть следующим</string>
     <string name="msg_added_playlist">Добавлено в плейлист</string>
+    <string name="msg_added_favorites">Добавлено в избранное</string>
     <string name="nothing_playing">Ничего не играет</string>
+    <string name="folders_favorite">Избранные папки</string>
+    <string name="folders_sources">Мои папки</string>
+    <string name="selected_files">Выбранные файлы</string>
+    <string name="remove_folder">Убрать из списка</string>
+    <string name="fav_folders_add">Добавить папки в избранные папки</string>
+    <string name="fav_tracks_add">Добавить треки в Избранное</string>
+    <string name="play_folder">Играть папку</string>
+    <string name="empty_folder">Здесь нет аудиофайлов</string>
+    <string name="folders_hint">Добавьте папку (SD-карта, USB, любое хранилище), чтобы просматривать её, выбирать папки и треки, играть их или собирать плейлисты.</string>
+    <string name="eq_preamp">Предусиление</string>
+    <string name="eq_bass_knob">Бас</string>
+    <string name="eq_treble">Высокие</string>
+    <string name="eq_width">Стерео-база</string>
+    <string name="eq_balance">Баланс</string>
+    <string name="eq_surround">Объём</string>
+    <string name="eq_loud_knob">Громкость+</string>
+    <string name="eq_knobs">Тембр и пространство</string>
+    <string name="eq_switches">Переключатели</string>
+    <string name="eq_auto_preamp">Авто-предусиление (против клиппинга)</string>
+    <string name="eq_limiter">Мягкий лимитер</string>
+    <string name="eq_mono">Моно</string>
+    <string name="eq_swap">Поменять левый/правый каналы</string>
+    <string name="eq_hint">Нажмите на значение, чтобы сбросить. Двойное касание полосы — в ноль.</string>
+    <string-array name="eq_preset_names">
+        <item>Плоский</item><item>Усиление баса</item><item>Усиление высоких</item><item>Рок</item>
+        <item>Поп</item><item>Джаз</item><item>Классика</item><item>Вокал</item>
+        <item>Электроника</item><item>Хип-хоп</item><item>Акустика</item><item>Громкость</item>
+    </string-array>
     <plurals name="tracks_count">
         <item quantity="one">%d трек</item>
         <item quantity="few">%d трека</item>
         <item quantity="many">%d треков</item>
         <item quantity="other">%d трека</item>
     </plurals>
+    <string name="playback_error">Не удаётся воспроизвести файл (%s)</string>
 </resources>

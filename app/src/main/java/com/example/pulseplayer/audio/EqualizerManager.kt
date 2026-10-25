@@ -2,31 +2,41 @@ package com.example.pulseplayer.audio
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.media.audiofx.BassBoost
-import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 
-/** Эквалайзер + бас + виртуализатор + усиление громкости. Живёт в одном процессе с PlaybackService. */
+/**
+ * Управление звуком: собственный DSP ([DspProcessor], 12 полос + крутилки + переключатели)
+ * и системные эффекты Virtualizer / LoudnessEnhancer. Живёт в одном процессе с PlaybackService.
+ */
 object EqualizerManager {
 
+    val dsp = DspProcessor()
+
+    /** Пресеты для 12 полос: 32, 64, 125, 250, 500, 1k, 2k, 4k, 6k, 8k, 12k, 16k (дБ). Порядок = R.array.eq_preset_names */
+    val PRESETS: List<FloatArray> = listOf(
+        floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+        floatArrayOf(6f, 5.5f, 4.5f, 3f, 1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
+        floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 1f, 2.5f, 3.5f, 4.5f, 5f, 5.5f),
+        floatArrayOf(4.5f, 3.5f, 2.5f, 1f, -1f, -1.5f, 0f, 1.5f, 2.5f, 3.5f, 4f, 4f),
+        floatArrayOf(-1.5f, -1f, 0f, 1.5f, 3f, 3.5f, 2.5f, 1f, 0f, -0.5f, -1f, -1.5f),
+        floatArrayOf(3f, 2.5f, 1.5f, 2f, -1.5f, -1.5f, 0f, 1f, 2f, 2.5f, 3f, 3.5f),
+        floatArrayOf(4f, 3.5f, 3f, 2.5f, -1f, -1f, 0f, 1.5f, 2.5f, 3f, 3.5f, 4f),
+        floatArrayOf(-3f, -2.5f, -1.5f, 0.5f, 2.5f, 3.5f, 3.5f, 2.5f, 1f, 0f, -1f, -2f),
+        floatArrayOf(5f, 4.5f, 2f, 0f, -2f, -1f, 1f, 0f, 2f, 3.5f, 4.5f, 5f),
+        floatArrayOf(5.5f, 5f, 3f, 3.5f, -1f, -1f, 1f, -0.5f, 1.5f, 2f, 2.5f, 3f),
+        floatArrayOf(3f, 3f, 2.5f, 1.5f, 2f, 2f, 2.5f, 2.5f, 2.5f, 2f, 2.5f, 2f),
+        floatArrayOf(6f, 5f, 3f, 0f, -1f, -1f, -1f, 0f, 1.5f, 4f, 5f, 5.5f),
+    )
+
     data class State(
-        val available: Boolean = false,
-        val enabled: Boolean = false,
-        val centerFreqsHz: List<Int> = emptyList(),
-        val minLevel: Int = -1500,
-        val maxLevel: Int = 1500,
-        val levels: List<Int> = emptyList(),
-        val presets: List<String> = emptyList(),
+        val params: DspParams = DspParams(),
         val preset: Int = -1,
-        val bass: Int = 0,
-        val virtualizer: Int = 0,
-        val loudness: Int = 0,
-        val bassSupported: Boolean = false,
+        val virtualizer: Int = 0,   // 0..1000
+        val loudness: Int = 0,      // 0..1000 мБ
         val virtSupported: Boolean = false,
         val loudSupported: Boolean = false,
     )
@@ -35,131 +45,120 @@ object EqualizerManager {
     val state: StateFlow<State> = _state.asStateFlow()
 
     private var prefs: SharedPreferences? = null
-    private var eq: Equalizer? = null
-    private var bb: BassBoost? = null
     private var vz: Virtualizer? = null
     private var le: LoudnessEnhancer? = null
 
     fun init(ctx: Context) {
-        if (prefs == null) prefs = ctx.applicationContext.getSharedPreferences("equalizer", Context.MODE_PRIVATE)
+        if (prefs != null) return
+        val p = ctx.applicationContext.getSharedPreferences("dsp", Context.MODE_PRIVATE)
+        prefs = p
+        val n = DspParams.BAND_FREQS.size
+        val saved = p.getString("gains", null)?.split(",")?.mapNotNull { it.toFloatOrNull() }
+        val params = DspParams(
+            enabled = p.getBoolean("enabled", false),
+            gains = if (saved != null && saved.size == n) saved else List(n) { 0f },
+            preamp = p.getFloat("preamp", 0f),
+            bass = p.getFloat("bass", 0f),
+            treble = p.getFloat("treble", 0f),
+            width = p.getFloat("width", 1f),
+            balance = p.getFloat("balance", 0f),
+            autoPreamp = p.getBoolean("auto", true),
+            limiter = p.getBoolean("limiter", true),
+            mono = p.getBoolean("mono", false),
+            swap = p.getBoolean("swap", false),
+        )
+        dsp.params = params
+        _state.value = State(
+            params = params, preset = p.getInt("preset", -1),
+            virtualizer = p.getInt("virt", 0), loudness = p.getInt("loud", 0),
+        )
     }
 
     @Synchronized
     fun attach(sessionId: Int) {
         release()
-        val p = prefs ?: return
         if (sessionId <= 0) return
-        var s = State()
-
-        runCatching {
-            val e = Equalizer(0, sessionId)
-            eq = e
-            val n = e.numberOfBands.toInt()
-            val range = e.bandLevelRange
-            val saved = p.getString("levels", null)?.split(",")?.mapNotNull { it.toIntOrNull() }
-            val levels = if (saved != null && saved.size == n) saved else List(n) { 0 }
-            e.enabled = p.getBoolean("enabled", false)
-            levels.forEachIndexed { i, l -> e.setBandLevel(i.toShort(), l.toShort()) }
-            s = s.copy(
-                available = true,
-                enabled = e.enabled,
-                centerFreqsHz = (0 until n).map { e.getCenterFreq(it.toShort()) / 1000 },
-                minLevel = range[0].toInt(),
-                maxLevel = range[1].toInt(),
-                levels = levels,
-                presets = (0 until e.numberOfPresets).map { e.getPresetName(it.toShort()) },
-                preset = p.getInt("preset", -1),
-            )
-        }
-        runCatching {
-            val b = BassBoost(0, sessionId)
-            bb = b
-            val v = p.getInt("bass", 0)
-            if (b.strengthSupported) {
-                b.setStrength(v.toShort()); b.enabled = v > 0
-                s = s.copy(bassSupported = true, bass = v)
-            }
-        }
+        val s = _state.value
+        var virtOk = false
+        var loudOk = false
         runCatching {
             val v = Virtualizer(0, sessionId)
             vz = v
-            val x = p.getInt("virt", 0)
             if (v.strengthSupported) {
-                v.setStrength(x.toShort()); v.enabled = x > 0
-                s = s.copy(virtSupported = true, virtualizer = x)
+                v.setStrength(s.virtualizer.toShort()); v.enabled = s.virtualizer > 0; virtOk = true
             }
         }
         runCatching {
             val l = LoudnessEnhancer(sessionId)
             le = l
-            val g = p.getInt("loud", 0)
-            l.setTargetGain(g); l.enabled = g > 0
-            s = s.copy(loudSupported = true, loudness = g)
+            l.setTargetGain(s.loudness); l.enabled = s.loudness > 0; loudOk = true
         }
-        _state.value = s
+        _state.value = _state.value.copy(virtSupported = virtOk, loudSupported = loudOk)
     }
 
     @Synchronized
     fun release() {
-        runCatching { eq?.release() }; eq = null
-        runCatching { bb?.release() }; bb = null
         runCatching { vz?.release() }; vz = null
         runCatching { le?.release() }; le = null
     }
 
-    fun setEnabled(on: Boolean) {
-        runCatching { eq?.enabled = on }
-        prefs?.edit()?.putBoolean("enabled", on)?.apply()
-        _state.update { it.copy(enabled = on) }
+    // ---------- изменение параметров ----------
+    private fun edit(preset: Int? = null, f: (DspParams) -> DspParams) {
+        val old = _state.value
+        val np = f(old.params)
+        dsp.params = np
+        val pr = preset ?: old.preset
+        _state.value = old.copy(params = np, preset = pr)
+        save(np, pr)
     }
 
-    fun setBand(index: Int, level: Int) {
-        val s = _state.value
-        if (index !in s.levels.indices) return
-        val l = level.coerceIn(s.minLevel, s.maxLevel)
-        runCatching { eq?.setBandLevel(index.toShort(), l.toShort()) }
-        val nl = s.levels.toMutableList().also { it[index] = l }
-        saveLevels(nl, -1)
-        _state.update { it.copy(levels = nl, preset = -1) }
+    fun setEnabled(on: Boolean) = edit { it.copy(enabled = on) }
+
+    fun setBand(i: Int, db: Float) = edit(preset = -1) { p ->
+        if (i !in p.gains.indices) p
+        else p.copy(gains = p.gains.toMutableList().also { it[i] = db.coerceIn(-DspParams.MAX_DB, DspParams.MAX_DB) })
     }
 
-    fun usePreset(index: Int) {
-        val e = eq ?: return
-        runCatching {
-            e.usePreset(index.toShort())
-            val nl = (0 until e.numberOfBands.toInt()).map { e.getBandLevel(it.toShort()).toInt() }
-            saveLevels(nl, index)
-            _state.update { it.copy(levels = nl, preset = index) }
-        }
+    fun setPreset(index: Int) {
+        val g = PRESETS.getOrNull(index) ?: return
+        edit(preset = index) { it.copy(gains = g.toList()) }
     }
 
-    fun reset() {
-        val n = _state.value.levels.size
-        val zeros = List(n) { 0 }
-        zeros.forEachIndexed { i, l -> runCatching { eq?.setBandLevel(i.toShort(), l.toShort()) } }
-        saveLevels(zeros, -1)
-        _state.update { it.copy(levels = zeros, preset = -1) }
+    fun reset() = edit(preset = 0) {
+        it.copy(gains = List(DspParams.BAND_FREQS.size) { 0f }, preamp = 0f, bass = 0f, treble = 0f, width = 1f, balance = 0f)
     }
 
-    fun setBass(v: Int) {
-        runCatching { bb?.setStrength(v.toShort()); bb?.enabled = v > 0 }
-        prefs?.edit()?.putInt("bass", v)?.apply()
-        _state.update { it.copy(bass = v) }
-    }
+    fun setPreamp(v: Float) = edit { it.copy(preamp = v) }
+    fun setBass(v: Float) = edit { it.copy(bass = v) }
+    fun setTreble(v: Float) = edit { it.copy(treble = v) }
+    fun setWidth(v: Float) = edit { it.copy(width = v) }
+    fun setBalance(v: Float) = edit { it.copy(balance = v) }
+    fun setAutoPreamp(v: Boolean) = edit { it.copy(autoPreamp = v) }
+    fun setLimiter(v: Boolean) = edit { it.copy(limiter = v) }
+    fun setMono(v: Boolean) = edit { it.copy(mono = v) }
+    fun setSwap(v: Boolean) = edit { it.copy(swap = v) }
 
     fun setVirtualizer(v: Int) {
         runCatching { vz?.setStrength(v.toShort()); vz?.enabled = v > 0 }
         prefs?.edit()?.putInt("virt", v)?.apply()
-        _state.update { it.copy(virtualizer = v) }
+        _state.value = _state.value.copy(virtualizer = v)
     }
 
     fun setLoudness(mB: Int) {
         runCatching { le?.setTargetGain(mB); le?.enabled = mB > 0 }
         prefs?.edit()?.putInt("loud", mB)?.apply()
-        _state.update { it.copy(loudness = mB) }
+        _state.value = _state.value.copy(loudness = mB)
     }
 
-    private fun saveLevels(levels: List<Int>, preset: Int) {
-        prefs?.edit()?.putString("levels", levels.joinToString(","))?.putInt("preset", preset)?.apply()
+    private fun save(p: DspParams, preset: Int) {
+        prefs?.edit()
+            ?.putBoolean("enabled", p.enabled)
+            ?.putString("gains", p.gains.joinToString(","))
+            ?.putFloat("preamp", p.preamp)?.putFloat("bass", p.bass)?.putFloat("treble", p.treble)
+            ?.putFloat("width", p.width)?.putFloat("balance", p.balance)
+            ?.putBoolean("auto", p.autoPreamp)?.putBoolean("limiter", p.limiter)
+            ?.putBoolean("mono", p.mono)?.putBoolean("swap", p.swap)
+            ?.putInt("preset", preset)
+            ?.apply()
     }
 }

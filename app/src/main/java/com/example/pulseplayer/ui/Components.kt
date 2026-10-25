@@ -3,7 +3,11 @@
 package com.example.pulseplayer.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -19,6 +23,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -239,6 +246,7 @@ fun SelectionBar(
     onPlayNext: () -> Unit,
     onQueue: () -> Unit,
     onPlaylist: () -> Unit,
+    extra: List<Pair<Int, () -> Unit>> = emptyList(),
 ) {
     var menu by remember { mutableStateOf(false) }
     TopAppBar(
@@ -253,6 +261,9 @@ fun SelectionBar(
                 DropdownMenu(menu, { menu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.play_next)) }, onClick = { menu = false; onPlayNext() })
                     DropdownMenuItem(text = { Text(stringResource(R.string.add_to_queue)) }, onClick = { menu = false; onQueue() })
+                    extra.forEach { (res, action) ->
+                        DropdownMenuItem(text = { Text(stringResource(res)) }, onClick = { menu = false; action() })
+                    }
                 }
             }
         },
@@ -341,4 +352,56 @@ fun AddToPlaylistDialog(tracks: List<Track>, vm: MainViewModel, onDismiss: () ->
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
+}
+
+/**
+ * Полоса воспроизведения: касание и перетаскивание пальцем меняют позицию.
+ * [onDragging] сообщает позицию (0..1) во время жеста и null после него.
+ */
+@Composable
+fun SeekBar(
+    progress: Float,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    trackHeight: Dp = 4.dp,
+    thumbRadius: Dp = 8.dp,
+    onDragging: (Float?) -> Unit = {},
+) {
+    val trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val activeColor = MaterialTheme.colorScheme.primary
+    var dragFrac by remember { mutableStateOf<Float?>(null) }
+    val seek by rememberUpdatedState(onSeek)
+    val dragging by rememberUpdatedState(onDragging)
+    val shown = (dragFrac ?: progress).coerceIn(0f, 1f)
+
+    Canvas(
+        modifier.pointerInput(Unit) {
+            val r = thumbRadius.toPx()
+            fun frac(x: Float) = ((x - r) / (size.width - 2 * r).coerceAtLeast(1f)).coerceIn(0f, 1f)
+            awaitEachGesture {
+                val down = awaitFirstDown()
+                down.consume()
+                dragFrac = frac(down.position.x)
+                dragging(dragFrac)
+                drag(down.id) { ch ->
+                    dragFrac = frac(ch.position.x)
+                    dragging(dragFrac)
+                    ch.consume()
+                }
+                dragFrac?.let { seek(it) }
+                dragFrac = null
+                dragging(null)
+            }
+        }
+    ) {
+        val r = thumbRadius.toPx()
+        val h = trackHeight.toPx()
+        val cy = size.height / 2
+        val x0 = r
+        val x1 = size.width - r
+        val xv = x0 + (x1 - x0) * shown
+        drawLine(trackColor, Offset(x0, cy), Offset(x1, cy), strokeWidth = h, cap = StrokeCap.Round)
+        drawLine(activeColor, Offset(x0, cy), Offset(xv, cy), strokeWidth = h, cap = StrokeCap.Round)
+        drawCircle(activeColor, if (dragFrac != null) r * 1.25f else r, Offset(xv, cy))
+    }
 }

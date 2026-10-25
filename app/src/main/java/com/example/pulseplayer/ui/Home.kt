@@ -2,11 +2,16 @@
 
 package com.example.pulseplayer.ui
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -32,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.pulseplayer.R
+import com.example.pulseplayer.data.DocEntry
 import kotlinx.coroutines.launch
 
 enum class HomeTab(val label: Int) {
@@ -55,27 +61,71 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, onOpen:
     val query by vm.query.collectAsStateWithLifecycle()
     val sort by vm.sort.collectAsStateWithLifecycle()
     val tracks by vm.tracks.collectAsStateWithLifecycle()
-    val picked by vm.picked.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
 
-    val page = pager.currentPage
-    val selectable = if (tabs[page] == HomeTab.FILES) picked else tracks
-    val selectedTracks = selectable.filter { it.uri in selection.uris }
+    val albums by vm.albums.collectAsStateWithLifecycle()
+    val artists by vm.artists.collectAsStateWithLifecycle()
+    val folders by vm.folders.collectAsStateWithLifecycle()
+    val sources by vm.sources.collectAsStateWithLifecycle()
+    val favFolders by vm.favFolders.collectAsStateWithLifecycle()
+    val groupSel = remember { SelectionState() }
 
-    LaunchedEffect(page) { selection.clear() }
-    BackHandler(selection.active) { selection.clear() }
-    BackHandler(searching && !selection.active) { searching = false; vm.query.value = "" }
+    val page = pager.currentPage
+    val tab = tabs[page]
+    val isFolderTab = tab == HomeTab.FILES
+    val isGroupTab = tab == HomeTab.ALBUMS || tab == HomeTab.ARTISTS || tab == HomeTab.FOLDERS
+    val groups = when (tab) {
+        HomeTab.ALBUMS -> albums
+        HomeTab.ARTISTS -> artists
+        HomeTab.FOLDERS -> folders
+        else -> emptyList()
+    }
+    val folderEntries = (favFolders + sources).distinctBy { it.uri }
+    val selectedFolders = folderEntries.filter { it.uri in groupSel.uris }.map { DocEntry(Uri.parse(it.uri), it.name, true) }
+    val selectedTracks = if (groupSel.active) {
+        groups.filter { it.key in groupSel.uris }.flatMap { it.tracks }.distinctBy { it.uri }
+    } else tracks.filter { it.uri in selection.uris }
+    val anySelection = selection.active || groupSel.active
+    val clearAll = { selection.clear(); groupSel.clear() }
+
+    LaunchedEffect(page) { clearAll() }
+    BackHandler(anySelection) { clearAll() }
+    BackHandler(searching && !anySelection) { searching = false; vm.query.value = "" }
 
     Column(Modifier.fillMaxSize()) {
-        if (selection.active) {
+        if (anySelection) {
             SelectionBar(
-                count = selection.uris.size,
-                onClose = { selection.clear() },
-                onSelectAll = { selectable.forEach { if (it.uri !in selection.uris) selection.uris.add(it.uri) } },
-                onPlay = { vm.playTracks(selectedTracks); selection.clear() },
-                onPlayNext = { vm.playNext(selectedTracks); selection.clear() },
-                onQueue = { vm.addToQueue(selectedTracks); selection.clear() },
-                onPlaylist = { vm.pickPlaylistFor(selectedTracks); selection.clear() },
+                count = if (groupSel.active) groupSel.uris.size else selection.uris.size,
+                onClose = clearAll,
+                onSelectAll = {
+                    when {
+                        isFolderTab -> folderEntries.forEach { if (it.uri !in groupSel.uris) groupSel.uris.add(it.uri) }
+                        isGroupTab -> groups.forEach { if (it.key !in groupSel.uris) groupSel.uris.add(it.key) }
+                        else -> tracks.forEach { if (it.uri !in selection.uris) selection.uris.add(it.uri) }
+                    }
+                },
+                onPlay = {
+                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.PLAY) else vm.playTracks(selectedTracks)
+                    clearAll()
+                },
+                onPlayNext = {
+                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.PLAY_NEXT) else vm.playNext(selectedTracks)
+                    clearAll()
+                },
+                onQueue = {
+                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.QUEUE) else vm.addToQueue(selectedTracks)
+                    clearAll()
+                },
+                onPlaylist = {
+                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.PLAYLIST) else vm.pickPlaylistFor(selectedTracks)
+                    clearAll()
+                },
+                extra = if (isFolderTab) listOf(
+                    R.string.fav_folders_add to { vm.browserAction(selectedFolders, "", BrowserAction.FAV_FOLDERS); clearAll() },
+                    R.string.fav_tracks_add to { vm.browserAction(selectedFolders, "", BrowserAction.FAV_TRACKS); clearAll() },
+                ) else listOf(
+                    R.string.fav_tracks_add to { vm.addToFavorites(selectedTracks); clearAll() },
+                ),
             )
         } else {
             var sortMenu by remember { mutableStateOf(false) }
@@ -155,24 +205,22 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, onOpen:
                     }
                 }
                 HomeTab.ALBUMS -> LibraryGate(granted, onGrant) {
-                    val albums by vm.albums.collectAsStateWithLifecycle()
-                    GroupGrid(albums, R.string.unknown_album) { onOpen(Dest.Tracks(it.title, it.tracks)) }
+                    GroupGrid(albums, R.string.unknown_album, groupSel) { onOpen(Dest.Tracks(it.title, it.tracks)) }
                 }
                 HomeTab.ARTISTS -> LibraryGate(granted, onGrant) {
-                    val artists by vm.artists.collectAsStateWithLifecycle()
                     val unknown = stringResource(R.string.unknown_artist)
-                    GroupList(artists, R.string.unknown_artist, Icons.Rounded.Person) {
+                    GroupList(artists, R.string.unknown_artist, Icons.Rounded.Person, groupSel) {
                         onOpen(Dest.Tracks(it.title.ifBlank { unknown }, it.tracks))
                     }
                 }
                 HomeTab.FOLDERS -> LibraryGate(granted, onGrant) {
-                    val folders by vm.folders.collectAsStateWithLifecycle()
-                    GroupList(folders, R.string.unknown_folder, Icons.Rounded.Folder) {
-                        onOpen(Dest.Tracks(it.title, it.tracks))
+                    val root = stringResource(R.string.unknown_folder)
+                    GroupList(folders, R.string.unknown_folder, Icons.Rounded.Folder, groupSel) {
+                        onOpen(Dest.Tracks(it.title.ifBlank { root }, it.tracks))
                     }
                 }
                 HomeTab.PLAYLISTS -> PlaylistsTab(vm, onOpen)
-                HomeTab.FILES -> FilesTab(vm, selection)
+                HomeTab.FILES -> FilesTab(vm, onOpen, groupSel)
             }
         }
     }
@@ -190,7 +238,16 @@ private fun LibraryGate(granted: Boolean, onGrant: () -> Unit, content: @Composa
 }
 
 @Composable
-private fun GroupGrid(groups: List<Group>, blankLabel: Int, onClick: (Group) -> Unit) {
+private fun SelectedOverlay(corner: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier.clip(RoundedCornerShape(corner)).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)),
+        contentAlignment = Alignment.Center,
+    ) { Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.onPrimary) }
+}
+
+/** Альбомы/исполнители/папки: долгое нажатие — выбор нескольких без открытия. */
+@Composable
+private fun GroupGrid(groups: List<Group>, blankLabel: Int, selection: SelectionState, onOpen: (Group) -> Unit) {
     if (groups.isEmpty()) { EmptyState(Icons.Rounded.Album, stringResource(R.string.library_empty)); return }
     LazyVerticalGrid(
         GridCells.Adaptive(150.dp),
@@ -199,8 +256,17 @@ private fun GroupGrid(groups: List<Group>, blankLabel: Int, onClick: (Group) -> 
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         items(groups, key = { it.key }) { g ->
-            Column(Modifier.clickable { onClick(g) }) {
-                Artwork(g.artUri, Modifier.fillMaxWidth().aspectRatio(1f), corner = 18.dp)
+            val selected = g.key in selection.uris
+            Column(
+                Modifier.clip(RoundedCornerShape(18.dp)).combinedClickable(
+                    onClick = { if (selection.active) selection.toggle(g.key) else onOpen(g) },
+                    onLongClick = { selection.toggle(g.key) },
+                )
+            ) {
+                Box {
+                    Artwork(g.artUri, Modifier.fillMaxWidth().aspectRatio(1f), corner = 18.dp)
+                    if (selected) SelectedOverlay(18.dp, Modifier.matchParentSize())
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(g.title.ifBlank { stringResource(blankLabel) }, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleSmall)
@@ -217,11 +283,14 @@ private fun GroupGrid(groups: List<Group>, blankLabel: Int, onClick: (Group) -> 
 private fun GroupList(
     groups: List<Group>, blankLabel: Int,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: (Group) -> Unit,
+    selection: SelectionState,
+    onOpen: (Group) -> Unit,
 ) {
     if (groups.isEmpty()) { EmptyState(icon, stringResource(R.string.library_empty)); return }
+    val corner = if (icon == Icons.Rounded.Person) 26.dp else 10.dp
     LazyColumn(Modifier.fillMaxSize()) {
         items(groups, key = { it.key }) { g ->
+            val selected = g.key in selection.uris
             ListItem(
                 headlineContent = { Text(g.title.ifBlank { stringResource(blankLabel) }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 supportingContent = {
@@ -230,10 +299,17 @@ private fun GroupList(
                 },
                 leadingContent = {
                     Box(Modifier.size(52.dp)) {
-                        Artwork(g.artUri, Modifier.fillMaxSize(), corner = 26.dp.takeIf { icon == Icons.Rounded.Person } ?: 10.dp)
+                        Artwork(g.artUri, Modifier.fillMaxSize(), corner = corner)
+                        if (selected) SelectedOverlay(corner, Modifier.fillMaxSize())
                     }
                 },
-                modifier = Modifier.clickable { onClick(g) },
+                colors = ListItemDefaults.colors(
+                    containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
+                ),
+                modifier = Modifier.combinedClickable(
+                    onClick = { if (selection.active) selection.toggle(g.key) else onOpen(g) },
+                    onLongClick = { selection.toggle(g.key) },
+                ),
             )
         }
     }
@@ -296,42 +372,95 @@ private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit) {
 }
 
 @Composable
-private fun FilesTab(vm: MainViewModel, selection: SelectionState) {
+private fun SectionTitle(text: String) {
+    Text(text, Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
+        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+}
+
+@Composable
+private fun FilesTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: SelectionState) {
     val picked by vm.picked.collectAsStateWithLifecycle()
+    val sources by vm.sources.collectAsStateWithLifecycle()
+    val favs by vm.favFolders.collectAsStateWithLifecycle()
     val importing by vm.importing.collectAsStateWithLifecycle()
     val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { vm.importDocuments(it) }
-    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(vm::importTree) }
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(vm::addSourceFolder) }
 
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilledTonalButton(onClick = { filesLauncher.launch(AUDIO_MIME) }, Modifier.weight(1f)) {
-                Icon(Icons.Rounded.AudioFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.files_pick_files), maxLines = 1)
-            }
-            OutlinedButton(onClick = { folderLauncher.launch(null) }, Modifier.weight(1f)) {
-                Icon(Icons.Rounded.FolderOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.files_pick_folder), maxLines = 1)
-            }
-        }
-        if (importing) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Text(stringResource(R.string.importing), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
-        }
-        if (picked.isEmpty()) {
-            if (!importing) EmptyState(Icons.Rounded.AudioFile, stringResource(R.string.files_empty_title), stringResource(R.string.files_empty_desc))
-        } else {
-            TrackList(
-                picked, vm, selection,
-                header = {
-                    PlayShuffleRow(picked, vm) {
-                        IconButton(onClick = { vm.clearPicked() }) { Icon(Icons.Rounded.Delete, stringResource(R.string.clear_list)) }
+    @Composable
+    fun FolderRow(f: com.example.pulseplayer.data.FolderEntity, removable: Boolean) {
+        var menu by remember { mutableStateOf(false) }
+        val sel = f.uri in selection.uris
+        ListItem(
+            headlineContent = { Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingContent = {
+                Icon(if (sel) Icons.Rounded.CheckCircle else if (f.isFavorite) Icons.Rounded.Star else Icons.Rounded.Folder, null,
+                    tint = MaterialTheme.colorScheme.primary)
+            },
+            trailingContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!selection.active) IconButton(onClick = { vm.playFolder(f.uri, f.name) }) {
+                        Icon(Icons.Rounded.PlayArrow, stringResource(R.string.play_folder))
                     }
-                },
-                onRemove = { vm.removePicked(it) },
+                    if (removable && !selection.active) Box {
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }
+                        DropdownMenu(menu, { menu = false }) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.remove_folder)) },
+                                onClick = { menu = false; vm.removeSource(f) })
+                        }
+                    }
+                }
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = if (sel) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent,
+            ),
+            modifier = Modifier.combinedClickable(
+                onClick = { if (selection.active) selection.toggle(f.uri) else onOpen(Dest.Browse(f.uri, f.name)) },
+                onLongClick = { selection.toggle(f.uri) },
+            ),
+        )
+    }
+
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilledTonalButton(onClick = { folderLauncher.launch(null) }, Modifier.weight(1f)) {
+                    Icon(Icons.Rounded.FolderOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.files_pick_folder), maxLines = 1)
+                }
+                OutlinedButton(onClick = { filesLauncher.launch(AUDIO_MIME) }, Modifier.weight(1f)) {
+                    Icon(Icons.Rounded.AudioFile, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.files_pick_files), maxLines = 1)
+                }
+            }
+            if (importing) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(stringResource(R.string.importing), Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        if (picked.isNotEmpty()) item {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.selected_files)) },
+                supportingContent = { Text(quantityString(R.plurals.tracks_count, picked.size)) },
+                leadingContent = { Icon(Icons.Rounded.AudioFile, null, tint = MaterialTheme.colorScheme.primary) },
+                modifier = Modifier.clickable { onOpen(Dest.Picked) },
             )
+        }
+        if (favs.isNotEmpty()) {
+            item { SectionTitle(stringResource(R.string.folders_favorite)) }
+            items(favs, key = { "fav" + it.uri }) { FolderRow(it, removable = false) }
+        }
+        if (sources.isNotEmpty()) {
+            item { SectionTitle(stringResource(R.string.folders_sources)) }
+            items(sources, key = { "src" + it.uri }) { FolderRow(it, removable = true) }
+        }
+        if (sources.isEmpty() && favs.isEmpty() && picked.isEmpty() && !importing) {
+            item {
+                Text(stringResource(R.string.folders_hint), Modifier.padding(24.dp),
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

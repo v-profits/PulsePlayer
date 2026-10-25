@@ -52,9 +52,9 @@
     <string name="delete_playlist_title">Delete playlist?</string>
     <string name="empty_playlist">This playlist is empty</string>
     <string name="files_pick_files">Pick files</string>
-    <string name="files_pick_folder">Pick folder</string>
+    <string name="files_pick_folder">Add folder</string>
     <string name="files_empty_title">No files selected</string>
-    <string name="files_empty_desc">Pick several audio files or a whole folder — any format Android can decode.</string>
+    <string name="files_empty_desc">Add a folder or pick several audio files — any format Android can decode.</string>
     <string name="clear_list">Clear list</string>
     <string name="importing">Reading files…</string>
     <string name="permission_title">Access to your music</string>
@@ -78,9 +78,39 @@
     <string name="msg_added_queue">Added to queue</string>
     <string name="msg_play_next">Will play next</string>
     <string name="msg_added_playlist">Added to playlist</string>
+    <string name="msg_added_favorites">Added to favorites</string>
     <string name="nothing_playing">Nothing playing</string>
+    <string name="folders_favorite">Favorite folders</string>
+    <string name="folders_sources">My folders</string>
+    <string name="selected_files">Selected files</string>
+    <string name="remove_folder">Remove from list</string>
+    <string name="fav_folders_add">Add folders to favorite folders</string>
+    <string name="fav_tracks_add">Add tracks to Favorites</string>
+    <string name="play_folder">Play folder</string>
+    <string name="empty_folder">No audio files here</string>
+    <string name="folders_hint">Add a folder (SD card, USB, any storage) to browse it, select folders and tracks, play them or build playlists.</string>
+    <string name="eq_preamp">Preamp</string>
+    <string name="eq_bass_knob">Bass</string>
+    <string name="eq_treble">Treble</string>
+    <string name="eq_width">Stereo width</string>
+    <string name="eq_balance">Balance</string>
+    <string name="eq_surround">Surround</string>
+    <string name="eq_loud_knob">Loudness</string>
+    <string name="eq_knobs">Tone &amp; space</string>
+    <string name="eq_switches">Switches</string>
+    <string name="eq_auto_preamp">Auto preamp (prevents clipping)</string>
+    <string name="eq_limiter">Soft limiter</string>
+    <string name="eq_mono">Mono</string>
+    <string name="eq_swap">Swap left/right channels</string>
+    <string name="eq_hint">Tap a value to reset it. Double-tap a band to set it to 0.</string>
+    <string-array name="eq_preset_names">
+        <item>Flat</item><item>Bass boost</item><item>Treble boost</item><item>Rock</item>
+        <item>Pop</item><item>Jazz</item><item>Classical</item><item>Vocal</item>
+        <item>Electronic</item><item>Hip-Hop</item><item>Acoustic</item><item>Loudness</item>
+    </string-array>
     <plurals name="tracks_count">
         <item quantity="one">%d track</item>
         <item quantity="other">%d tracks</item>
     </plurals>
+    <string name="playback_error">Can\'t play this file (%s)</string>
 </resources>

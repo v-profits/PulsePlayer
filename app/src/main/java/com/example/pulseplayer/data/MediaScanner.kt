@@ -4,6 +4,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
@@ -107,6 +108,66 @@ class MediaScanner(private val ctx: Context) {
         out
     }
 
+    // ---------- Обзор папок (SAF) ----------
+
+    private fun docId(uri: Uri): String =
+        if (DocumentsContract.isDocumentUri(ctx, uri)) DocumentsContract.getDocumentId(uri)
+        else DocumentsContract.getTreeDocumentId(uri)
+
+    /** Имя папки/файла по SAF-uri. */
+    fun nameOf(uri: Uri): String =
+        runCatching { DocumentFile.fromTreeUri(ctx, uri)?.name }.getOrNull()
+            ?: uri.lastPathSegment?.substringAfterLast('/').orEmpty()
+
+    /** Содержимое папки одним запросом: сначала подпапки, затем аудиофайлы (естественная сортировка). */
+    suspend fun listChildren(parent: Uri): List<DocEntry> = withContext(Dispatchers.IO) {
+        val out = ArrayList<DocEntry>()
+        runCatching {
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(parent, docId(parent))
+            ctx.contentResolver.query(
+                children,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                ),
+                null, null, null,
+            )?.use { c ->
+                while (c.moveToNext()) {
+                    val id = c.getString(0) ?: continue
+                    val name = c.getString(1).orEmpty()
+                    val mime = c.getString(2).orEmpty()
+                    val isDir = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    if (isDir || mime.startsWith("audio/") || isAudioName(name)) {
+                        out += DocEntry(DocumentsContract.buildDocumentUriUsingTree(parent, id), name, isDir)
+                    }
+                }
+            }
+        }
+        out.sortedWith(compareBy<DocEntry>({ !it.isDir }).thenBy(NaturalOrder) { it.name })
+    }
+
+    /** Все аудиофайлы папки рекурсивно: файлы папки, затем подпапки по порядку. */
+    suspend fun collectAudio(root: Uri): List<DocEntry> {
+        val out = ArrayList<DocEntry>()
+        walk(root, out)
+        return out
+    }
+
+    private suspend fun walk(dir: Uri, out: MutableList<DocEntry>) {
+        val kids = listChildren(dir)
+        kids.filter { !it.isDir }.forEach { out += it }
+        kids.filter { it.isDir }.forEach { walk(it.uri, out) }
+    }
+
+    /** Лёгкий трек без чтения тегов (мгновенный старт); теги плеер подхватит из самого файла. */
+    fun entryToTrack(e: DocEntry, folderName: String) = Track(
+        uri = e.uri.toString(),
+        title = e.name.substringBeforeLast('.'),
+        artist = "", album = "", durationMs = 0L, artUri = null,
+        dateAdded = System.currentTimeMillis() / 1000, folder = folderName,
+    )
+
     private fun isAudioName(name: String?): Boolean =
         name?.substringAfterLast('.', "")?.lowercase() in AUDIO_EXT
 
@@ -116,4 +177,34 @@ class MediaScanner(private val ctx: Context) {
             "mka", "amr", "awb", "mid", "midi", "wma", "ape", "wv", "ac3", "eac3", "dts", "mp2", "3gp"
         )
     }
+}
+
+/** Элемент папки: подпапка или аудиофайл. */
+data class DocEntry(val uri: Uri, val name: String, val isDir: Boolean)
+
+/** Естественная сортировка: 2.mp3 раньше 10.mp3. */
+val NaturalOrder = Comparator<String> { a, b ->
+    var i = 0
+    var j = 0
+    while (i < a.length && j < b.length) {
+        if (a[i].isDigit() && b[j].isDigit()) {
+            var ei = i
+            while (ei < a.length && a[ei].isDigit()) ei++
+            var ej = j
+            while (ej < b.length && b[ej].isDigit()) ej++
+            val na = a.substring(i, ei).trimStart('0')
+            val nb = b.substring(j, ej).trimStart('0')
+            if (na.length != nb.length) return@Comparator na.length - nb.length
+            val c = na.compareTo(nb)
+            if (c != 0) return@Comparator c
+            i = ei
+            j = ej
+        } else {
+            val c = a[i].lowercaseChar().compareTo(b[j].lowercaseChar())
+            if (c != 0) return@Comparator c
+            i++
+            j++
+        }
+    }
+    (a.length - i) - (b.length - j)
 }

@@ -9,13 +9,16 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.pulseplayer.PlaybackService
 import com.example.pulseplayer.R
 import com.example.pulseplayer.data.AppDb
+import com.example.pulseplayer.data.DocEntry
 import com.example.pulseplayer.data.FAVORITES_ID
+import com.example.pulseplayer.data.FolderEntity
 import com.example.pulseplayer.data.MediaScanner
 import com.example.pulseplayer.data.PlaylistEntity
 import com.example.pulseplayer.data.PlaylistItem
@@ -45,6 +48,8 @@ enum class SortMode(@StringRes val label: Int) {
     RECENT(R.string.sort_recent),
     DURATION(R.string.sort_duration),
 }
+
+enum class BrowserAction { PLAY, SHUFFLE, PLAY_NEXT, QUEUE, PLAYLIST, FAV_TRACKS, FAV_FOLDERS }
 
 data class Group(
     val key: String,
@@ -172,27 +177,107 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun createPlaylist(name: String, thenAdd: List<Track> = emptyList()) {
         viewModelScope.launch {
             val id = dao.insertPlaylist(PlaylistEntity(name = name.trim().ifBlank { "Playlist" }))
-            if (thenAdd.isNotEmpty()) addToPlaylistInternal(id, thenAdd)
+            if (thenAdd.isNotEmpty()) addToPlaylistInternal(id, thenAdd, R.string.msg_added_playlist)
         }
     }
 
     fun renamePlaylist(id: Long, name: String) = viewModelScope.launch { dao.renamePlaylist(id, name.trim()) }
     fun deletePlaylist(id: Long) = viewModelScope.launch { dao.deletePlaylist(id) }
-    fun addToPlaylist(id: Long, list: List<Track>) = viewModelScope.launch { addToPlaylistInternal(id, list) }
+    fun addToPlaylist(id: Long, list: List<Track>) =
+        viewModelScope.launch { addToPlaylistInternal(id, list, R.string.msg_added_playlist) }
+
+    fun addToFavorites(list: List<Track>) =
+        viewModelScope.launch { addToPlaylistInternal(FAVORITES_ID, list, R.string.msg_added_favorites) }
     fun removeFromPlaylist(id: Long, t: Track) = viewModelScope.launch { dao.deleteByUri(id, t.uri) }
 
-    private suspend fun addToPlaylistInternal(id: Long, list: List<Track>) {
+    private suspend fun addToPlaylistInternal(id: Long, list: List<Track>, message: Int) {
         val existing = dao.uris(id).toSet()
         var pos = dao.maxPosition(id)
         val items = list.distinctBy { it.uri }.filter { it.uri !in existing }.map { it.toItem(id, ++pos) }
         if (items.isNotEmpty()) dao.insertItems(items)
-        _messages.tryEmit(R.string.msg_added_playlist)
+        _messages.tryEmit(message)
     }
 
     fun toggleFavorite(t: Track) {
         viewModelScope.launch {
             if (t.uri in favoriteUris.value) dao.deleteByUri(FAVORITES_ID, t.uri)
             else dao.insertItems(listOf(t.toItem(FAVORITES_ID, dao.maxPosition(FAVORITES_ID) + 1)))
+        }
+    }
+
+    // ---------- Папки (SAF): обзор, источники, избранные папки ----------
+    val sources = dao.observeSources().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val favFolders = dao.observeFavFolders().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val favFolderUris: StateFlow<Set<String>> = favFolders.map { l -> l.map { it.uri }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    suspend fun listFolder(uri: Uri): List<DocEntry> = scanner.listChildren(uri)
+
+    fun addSourceFolder(tree: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                getApplication<Application>().contentResolver
+                    .takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val key = tree.toString()
+            val ex = dao.folder(key)
+            dao.upsertFolder((ex ?: FolderEntity(key, scanner.nameOf(tree))).copy(isSource = true))
+        }
+    }
+
+    fun removeSource(f: FolderEntity) {
+        viewModelScope.launch {
+            if (f.isFavorite) dao.upsertFolder(f.copy(isSource = false)) else dao.deleteFolder(f.uri)
+        }
+    }
+
+    fun toggleFavoriteFolder(uri: String, name: String) {
+        viewModelScope.launch {
+            val ex = dao.folder(uri)
+            when {
+                ex == null -> dao.upsertFolder(FolderEntity(uri, name, isFavorite = true))
+                ex.isFavorite -> if (ex.isSource) dao.upsertFolder(ex.copy(isFavorite = false)) else dao.deleteFolder(uri)
+                else -> dao.upsertFolder(ex.copy(isFavorite = true))
+            }
+        }
+    }
+
+    fun playFolder(uri: String, name: String) =
+        browserAction(listOf(DocEntry(Uri.parse(uri), name, true)), name, BrowserAction.PLAY)
+
+    fun playFiles(files: List<DocEntry>, index: Int, folderName: String) {
+        playTracks(files.map { scanner.entryToTrack(it, folderName) }, index)
+    }
+
+    /** Действие над выбранными папками/файлами: папки раскрываются рекурсивно в список треков. */
+    fun browserAction(entries: List<DocEntry>, parentName: String, action: BrowserAction) {
+        viewModelScope.launch {
+            if (action == BrowserAction.FAV_FOLDERS) {
+                entries.filter { it.isDir }.forEach { e ->
+                    val ex = dao.folder(e.uri.toString())
+                    if (ex == null) dao.upsertFolder(FolderEntity(e.uri.toString(), e.name, isFavorite = true))
+                    else if (!ex.isFavorite) dao.upsertFolder(ex.copy(isFavorite = true))
+                }
+                return@launch
+            }
+            _importing.value = true
+            val tracks = ArrayList<Track>()
+            for (e in entries) {
+                if (e.isDir) scanner.collectAudio(e.uri).forEach { tracks += scanner.entryToTrack(it, e.name) }
+                else tracks += scanner.entryToTrack(e, parentName)
+            }
+            _importing.value = false
+            val list = tracks.distinctBy { it.uri }
+            if (list.isEmpty()) return@launch
+            when (action) {
+                BrowserAction.PLAY -> playTracks(list, 0)
+                BrowserAction.SHUFFLE -> playTracks(list, shuffle = true)
+                BrowserAction.PLAY_NEXT -> playNext(list)
+                BrowserAction.QUEUE -> addToQueue(list)
+                BrowserAction.PLAYLIST -> pickPlaylistFor(list)
+                BrowserAction.FAV_TRACKS -> addToPlaylistInternal(FAVORITES_ID, list, R.string.msg_added_favorites)
+                BrowserAction.FAV_FOLDERS -> Unit
+            }
         }
     }
 
@@ -207,7 +292,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var controller: MediaController? = null
     private val pending = ArrayList<(MediaController) -> Unit>()
 
+    private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val errors: Flow<String> = _errors
+    private var skipStreak = 0
+
     private val listener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) skipStreak = 0
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            val why = error.cause?.let { " · ${it.javaClass.simpleName}: ${it.message}" }.orEmpty()
+            _errors.tryEmit((error.errorCodeName + why).take(160))
+            val c = controller ?: return
+            // нечитаемый/битый файл — пропускаем к следующему (не более 5 подряд)
+            if (error.errorCode in 2000..4999 && skipStreak < 5 && c.hasNextMediaItem()) {
+                skipStreak++
+                c.seekToNextMediaItem(); c.prepare(); c.play()
+            }
+        }
+
         override fun onEvents(player: Player, events: Player.Events) {
             sync(player, events.contains(Player.EVENT_TIMELINE_CHANGED))
         }
@@ -239,7 +343,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun sync(p: Player, rebuildQueue: Boolean) {
         val old = _ui.value
         val queue = if (rebuildQueue) List(p.mediaItemCount) { p.getMediaItemAt(it).toTrack() } else old.queue
-        val current = p.currentMediaItem?.toTrack()
+        val base = p.currentMediaItem?.toTrack()
+        val md = p.mediaMetadata
+        // теги из самого файла (для треков из папок без предварительного чтения тегов)
+        val current = base?.copy(
+            title = md.title?.toString()?.takeIf { it.isNotBlank() } ?: base.title,
+            artist = md.artist?.toString()?.takeIf { it.isNotBlank() } ?: base.artist,
+            album = md.albumTitle?.toString()?.takeIf { it.isNotBlank() } ?: base.album,
+        )
         val dur = p.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: current?.durationMs ?: 0L
         _ui.value = PlayerUi(
             current = current,

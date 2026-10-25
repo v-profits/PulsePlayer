@@ -13,6 +13,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 const val FAVORITES_ID = 1L
@@ -45,6 +47,16 @@ data class PlaylistItem(
     val durationMs: Long,
     val artUri: String?,
     val position: Int,
+)
+
+/** Папки из файловой системы (SAF): добавленные источники и избранные папки. */
+@Entity(tableName = "folders")
+data class FolderEntity(
+    @PrimaryKey val uri: String,
+    val name: String,
+    val isSource: Boolean = false,
+    val isFavorite: Boolean = false,
+    val addedAt: Long = System.currentTimeMillis(),
 )
 
 data class PlaylistWithCount(
@@ -91,16 +103,42 @@ interface PlaylistDao {
 
     @Query("SELECT uri FROM playlist_items WHERE playlistId = 1")
     fun observeFavoriteUris(): Flow<List<String>>
+
+    @Query("SELECT * FROM folders WHERE isSource = 1 ORDER BY addedAt")
+    fun observeSources(): Flow<List<FolderEntity>>
+
+    @Query("SELECT * FROM folders WHERE isFavorite = 1 ORDER BY addedAt")
+    fun observeFavFolders(): Flow<List<FolderEntity>>
+
+    @Query("SELECT * FROM folders WHERE uri = :uri")
+    suspend fun folder(uri: String): FolderEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertFolder(f: FolderEntity)
+
+    @Query("DELETE FROM folders WHERE uri = :uri")
+    suspend fun deleteFolder(uri: String)
 }
 
-@Database(entities = [PlaylistEntity::class, PlaylistItem::class], version = 1, exportSchema = false)
+@Database(entities = [PlaylistEntity::class, PlaylistItem::class, FolderEntity::class], version = 2, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun dao(): PlaylistDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `folders` (`uri` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`isSource` INTEGER NOT NULL, `isFavorite` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`uri`))"
+                )
+            }
+        }
+
         @Volatile private var inst: AppDb? = null
         fun get(ctx: Context): AppDb = inst ?: synchronized(this) {
             inst ?: Room.databaseBuilder(ctx.applicationContext, AppDb::class.java, "pulse.db")
+                .addMigrations(MIGRATION_1_2)
                 .build().also { inst = it }
         }
     }

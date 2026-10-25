@@ -18,6 +18,8 @@ import com.example.pulseplayer.data.toTrack
 sealed interface Dest {
     data class Tracks(val title: String, val tracks: List<Track>) : Dest
     data class Playlist(val id: Long, val name: String) : Dest
+    data class Browse(val uri: String, val name: String) : Dest
+    data object Picked : Dest
     data object Equalizer : Dest
 }
 
@@ -42,6 +44,7 @@ fun TrackListScreen(
                 onPlayNext = { vm.playNext(selected); selection.clear() },
                 onQueue = { vm.addToQueue(selected); selection.clear() },
                 onPlaylist = { vm.pickPlaylistFor(selected); selection.clear() },
+                extra = listOf(R.string.fav_tracks_add to { vm.addToFavorites(selected); selection.clear() }),
             )
         } else {
             TopAppBar(title = { Text(title, maxLines = 1) }, navigationIcon = { BackButton(onBack) })

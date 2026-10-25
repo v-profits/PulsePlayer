@@ -35,7 +35,13 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
     val pos by vm.position.collectAsStateWithLifecycle()
     val t = ui.current ?: return
     Column(Modifier.clickable(onClick = onOpen)) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        SeekBar(
+            progress = if (ui.durationMs > 0) pos.toFloat() / ui.durationMs else 0f,
+            onSeek = { vm.seekTo((it * ui.durationMs).toLong()) },
+            modifier = Modifier.fillMaxWidth().height(24.dp).padding(horizontal = 4.dp),
+            trackHeight = 3.dp, thumbRadius = 7.dp,
+        )
+        Row(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Artwork(t.artUri, Modifier.size(46.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -51,10 +57,6 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
             }
             IconButton(onClick = { vm.next() }) { Icon(Icons.Rounded.SkipNext, stringResource(R.string.next)) }
         }
-        LinearProgressIndicator(
-            progress = { if (ui.durationMs > 0) (pos.toFloat() / ui.durationMs).coerceIn(0f, 1f) else 0f },
-            modifier = Modifier.fillMaxWidth().height(2.dp),
-        )
     }
 }
 
@@ -122,10 +124,12 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
                 }
 
                 val dur = ui.durationMs.coerceAtLeast(1L)
-                Slider(
-                    value = drag ?: (pos.toFloat() / dur).coerceIn(0f, 1f),
-                    onValueChange = { drag = it },
-                    onValueChangeFinished = { drag?.let { vm.seekTo((it * dur).toLong()) }; drag = null },
+                SeekBar(
+                    progress = (pos.toFloat() / dur).coerceIn(0f, 1f),
+                    onSeek = { vm.seekTo((it * dur).toLong()) },
+                    onDragging = { drag = it },
+                    modifier = Modifier.fillMaxWidth().height(40.dp),
+                    trackHeight = 6.dp, thumbRadius = 10.dp,
                 )
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
                     Text(formatTime(((drag ?: (pos.toFloat() / dur)) * dur).toLong()), style = MaterialTheme.typography.labelMedium)
