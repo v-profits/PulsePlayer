@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.pulseplayer"
+    namespace = "com.semenenko.pulseplayer"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.pulseplayer"
+        applicationId = "com.semenenko.pulseplayer"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

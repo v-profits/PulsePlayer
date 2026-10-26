@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 
-package com.example.pulseplayer.ui
+package com.semenenko.pulseplayer.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -20,7 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
-import com.example.pulseplayer.R
+import com.semenenko.pulseplayer.R
+import com.semenenko.pulseplayer.data.AppSettings
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /** Запись в стеке навигации. Уникальный id нужен, чтобы состояние экрана (прокрутка и т.д.) не путалось. */
@@ -57,7 +58,7 @@ fun PulseRoot(vm: MainViewModel) {
         }
     }
     LaunchedEffect(Unit) { vm.messages.collect { snack.showSnackbar(ctx.getString(it)) } }
-    LaunchedEffect(Unit) { vm.errors.collect { snack.showSnackbar(ctx.getString(R.string.playback_error, it)) } }
+    LaunchedEffect(Unit) { vm.errors.collect { snack.showSnackbar(it) } }
 
     BackHandler(enabled = stack.isNotEmpty()) { pop() }
     BackHandler(enabled = showNow) { showNow = false }
@@ -97,7 +98,8 @@ fun PulseRoot(vm: MainViewModel) {
                                     )
                                 }
                                 Dest.Equalizer -> EqualizerScreen(pop)
-                                Dest.Settings -> SettingsScreen(vm, pop)
+                                Dest.Settings -> SettingsScreen(vm, pop, push)
+                                Dest.Help -> HelpScreen(pop)
                             }
                         }
                     }
@@ -117,5 +119,19 @@ fun PulseRoot(vm: MainViewModel) {
         }
 
         picker?.let { AddToPlaylistDialog(it, vm) { vm.playlistPicker.value = null } }
+
+        val info by vm.trackInfo.collectAsStateWithLifecycle()
+        info?.let { TrackInfoDialog(it) { vm.trackInfo.value = null } }
+
+        val ratePrompt by AppSettings.ratePrompt.collectAsStateWithLifecycle()
+        if (ratePrompt) {
+            RateDialog(
+                onLater = { AppSettings.dismissRatePrompt() },
+                onSubmit = { stars ->
+                    AppSettings.markRated()
+                    if (stars >= 4) openRuStore(ctx) else sendFeedbackMail(ctx, stars)
+                },
+            )
+        }
     }
 }

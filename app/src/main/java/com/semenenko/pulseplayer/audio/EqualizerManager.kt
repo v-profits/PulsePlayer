@@ -1,4 +1,4 @@
-package com.example.pulseplayer.audio
+package com.semenenko.pulseplayer.audio
 
 import android.content.Context
 import android.content.SharedPreferences

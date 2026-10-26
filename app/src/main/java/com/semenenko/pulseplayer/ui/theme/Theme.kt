@@ -1,4 +1,4 @@
-package com.example.pulseplayer.ui.theme
+package com.semenenko.pulseplayer.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme

@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
-package com.example.pulseplayer.ui
+package com.semenenko.pulseplayer.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -12,9 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.pulseplayer.R
-import com.example.pulseplayer.data.Track
-import com.example.pulseplayer.data.toTrack
+import com.semenenko.pulseplayer.R
+import com.semenenko.pulseplayer.data.Track
+import com.semenenko.pulseplayer.data.toTrack
 
 sealed interface Dest {
     data class Tracks(val title: String, val tracks: List<Track>) : Dest
@@ -23,6 +23,7 @@ sealed interface Dest {
     data object Picked : Dest
     data object Equalizer : Dest
     data object Settings : Dest
+    data object Help : Dest
 }
 
 @Composable

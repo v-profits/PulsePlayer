@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
-package com.example.pulseplayer.ui
+package com.semenenko.pulseplayer.ui
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -36,9 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.pulseplayer.R
-import com.example.pulseplayer.audio.EqualizerManager
-import com.example.pulseplayer.data.DocEntry
+import com.semenenko.pulseplayer.R
+import com.semenenko.pulseplayer.audio.EqualizerManager
+import com.semenenko.pulseplayer.data.DocEntry
 import kotlinx.coroutines.launch
 
 enum class HomeTab(val label: Int) {
@@ -185,7 +185,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                             Icon(Icons.Rounded.Settings, stringResource(R.string.settings))
                         }
                         StateIconButton(Icons.Rounded.Tune, stringResource(R.string.equalizer), eqState.params.enabled,
-                            size = 48.dp, iconSize = 24.dp) { onOpen(Dest.Equalizer) }
+                            modifier = Modifier.padding(end = 8.dp), size = 48.dp, iconSize = 24.dp) { onOpen(Dest.Equalizer) }
                     }
                 },
             )
@@ -299,7 +299,7 @@ private fun GroupList(
 ) {
     if (groups.isEmpty()) { EmptyState(icon, stringResource(R.string.library_empty)); return }
     val cs = MaterialTheme.colorScheme
-    val corner = if (icon == Icons.Rounded.Person) 26.dp else 10.dp
+    val corner = 10.dp
     LazyColumn(Modifier.fillMaxSize()) {
         items(groups, key = { it.key }) { g ->
             val selected = g.key in selection.uris
@@ -404,7 +404,7 @@ private fun FilesTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: Selec
     val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(vm::addSourceFolder) }
 
     @Composable
-    fun FolderRow(f: com.example.pulseplayer.data.FolderEntity, removable: Boolean) {
+    fun FolderRow(f: com.semenenko.pulseplayer.data.FolderEntity, removable: Boolean) {
         var menu by remember { mutableStateOf(false) }
         val sel = f.uri in selection.uris
         ListItem(

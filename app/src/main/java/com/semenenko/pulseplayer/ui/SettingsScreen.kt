@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 
-package com.example.pulseplayer.ui
+package com.semenenko.pulseplayer.ui
 
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.clickable
@@ -19,8 +19,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.pulseplayer.R
-import com.example.pulseplayer.data.AppSettings
+import com.semenenko.pulseplayer.R
+import com.semenenko.pulseplayer.data.AppSettings
 
 private fun currentLanguage(): Int {
     val l = AppCompatDelegate.getApplicationLocales()
@@ -39,7 +39,7 @@ private fun applyLanguage(v: Int) {
 }
 
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpen: (Dest) -> Unit) {
     val ctx = LocalContext.current
     val theme by AppSettings.theme.collectAsStateWithLifecycle()
     val minLen by AppSettings.minLength.collectAsStateWithLifecycle()
@@ -91,6 +91,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             )
 
             Header(R.string.settings_about)
+            Row0(Icons.Rounded.Help, stringResource(R.string.settings_help), stringResource(R.string.settings_help_desc)) { onOpen(Dest.Help) }
+            Row0(Icons.Rounded.Star, stringResource(R.string.settings_rate), null) { AppSettings.requestRate() }
+            Row0(Icons.Rounded.Email, stringResource(R.string.settings_contact), FEEDBACK_EMAIL) { sendFeedbackMail(ctx, null) }
             ListItem(
                 headlineContent = { Text(stringResource(R.string.app_name)) },
                 supportingContent = { Text(stringResource(R.string.about_version, version) + "\n" + stringResource(R.string.about_desc)) },

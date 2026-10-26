@@ -1,9 +1,11 @@
-package com.example.pulseplayer.data
+package com.semenenko.pulseplayer.data
 
 import android.content.ContentUris
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
+import com.semenenko.pulseplayer.R
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -175,6 +177,97 @@ class MediaScanner(private val ctx: Context) {
     private fun isAudioName(name: String?): Boolean =
         name?.substringAfterLast('.', "")?.lowercase() in AUDIO_EXT
 
+    /** Подробные сведения о файле для окна «О треке». */
+    suspend fun trackInfo(t: Track): TrackInfo = withContext(Dispatchers.IO) {
+        val uri = Uri.parse(t.uri)
+        var name = ""
+        var size = 0L
+        var mime = ""
+        var location = ""
+        var modifiedMs = 0L
+        runCatching {
+            if (uri.authority == MediaStore.AUTHORITY) {
+                @Suppress("DEPRECATION")
+                val cols = arrayOf(
+                    MediaStore.Audio.Media.DISPLAY_NAME, MediaStore.Audio.Media.SIZE,
+                    MediaStore.Audio.Media.MIME_TYPE, MediaStore.Audio.Media.DATA,
+                    MediaStore.Audio.Media.DATE_MODIFIED,
+                )
+                ctx.contentResolver.query(uri, cols, null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        name = c.getString(0).orEmpty()
+                        size = c.getLong(1)
+                        mime = c.getString(2).orEmpty()
+                        location = readablePath(c.getString(3).orEmpty().substringBeforeLast('/', ""))
+                        modifiedMs = c.getLong(4) * 1000
+                    }
+                }
+            } else {
+                val cols = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                ctx.contentResolver.query(uri, cols, null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        name = c.getString(0).orEmpty()
+                        size = if (c.isNull(1)) 0L else c.getLong(1)
+                        modifiedMs = if (c.isNull(2)) 0L else c.getLong(2)
+                    }
+                }
+                mime = ctx.contentResolver.getType(uri).orEmpty()
+                location = documentLocation(uri)
+            }
+        }
+        var bitrate = 0
+        var sampleRate = 0
+        var year = ""
+        var trackNo = ""
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(ctx, uri)
+            bitrate = (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0) / 1000
+            if (Build.VERSION.SDK_INT >= 31) {
+                sampleRate = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)?.toIntOrNull() ?: 0
+            }
+            year = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR).orEmpty()
+            trackNo = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER).orEmpty()
+            if (mime.isBlank()) mime = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE).orEmpty()
+        } catch (e: Exception) {
+        } finally {
+            runCatching { r.release() }
+        }
+        val fileName = name.ifBlank { t.fileName }
+        TrackInfo(
+            title = t.title, artist = t.artist, album = t.album,
+            fileName = fileName, extension = fileName.substringAfterLast('.', "").lowercase(),
+            mime = mime, location = location, sizeBytes = size, durationMs = t.durationMs,
+            bitrateKbps = bitrate, sampleRateHz = sampleRate, year = year, trackNo = trackNo,
+            modifiedMs = modifiedMs,
+        )
+    }
+
+    private fun readablePath(raw: String): String {
+        val internal = ctx.getString(R.string.storage_internal)
+        return when {
+            raw.startsWith("/storage/emulated/0") -> internal + raw.removePrefix("/storage/emulated/0")
+            raw.startsWith("/sdcard") -> internal + raw.removePrefix("/sdcard")
+            else -> raw
+        }
+    }
+
+    /** Из идентификатора документа SAF («primary:Music/Альбом/файл.mp3») строит читаемый путь папок. */
+    private fun documentLocation(uri: Uri): String {
+        val id = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull() ?: return uri.toString()
+        if (!id.contains(':')) return uri.toString()
+        val root = id.substringBefore(':')
+        val rel = id.substringAfter(':')
+        if (root == "raw") return readablePath(rel.substringBeforeLast('/', ""))
+        val head = when {
+            root.equals("primary", true) -> ctx.getString(R.string.storage_internal)
+            Regex("[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}").matches(root) -> ctx.getString(R.string.storage_sd) + " ($root)"
+            else -> return uri.toString()
+        }
+        val dir = rel.substringBeforeLast('/', "")
+        return if (dir.isEmpty()) head else "$head/$dir"
+    }
+
     companion object {
         private val AUDIO_EXT = setOf(
             "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac", "alac", "aif", "aiff",
@@ -212,3 +305,20 @@ val NaturalOrder = Comparator<String> { a, b ->
     }
     (a.length - i) - (b.length - j)
 }
+
+data class TrackInfo(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val fileName: String,
+    val extension: String,
+    val mime: String,
+    val location: String,
+    val sizeBytes: Long,
+    val durationMs: Long,
+    val bitrateKbps: Int,
+    val sampleRateHz: Int,
+    val year: String,
+    val trackNo: String,
+    val modifiedMs: Long,
+)

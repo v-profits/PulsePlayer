@@ -1,8 +1,8 @@
-package com.example.pulseplayer
+package com.semenenko.pulseplayer
 
 import android.app.Application
-import com.example.pulseplayer.audio.EqualizerManager
-import com.example.pulseplayer.data.AppSettings
+import com.semenenko.pulseplayer.audio.EqualizerManager
+import com.semenenko.pulseplayer.data.AppSettings
 
 class PulseApp : Application() {
     override fun onCreate() {

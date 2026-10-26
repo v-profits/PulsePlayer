@@ -1,4 +1,4 @@
-package com.example.pulseplayer.data
+package com.semenenko.pulseplayer.data
 
 import android.net.Uri
 import androidx.media3.common.MediaItem

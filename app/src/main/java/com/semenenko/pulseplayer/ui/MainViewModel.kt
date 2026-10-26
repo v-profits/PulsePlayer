@@ -1,4 +1,4 @@
-package com.example.pulseplayer.ui
+package com.semenenko.pulseplayer.ui
 
 import android.app.Application
 import android.content.ComponentName
@@ -13,21 +13,22 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.example.pulseplayer.PlaybackService
-import com.example.pulseplayer.R
-import com.example.pulseplayer.data.AppDb
-import com.example.pulseplayer.data.AppSettings
-import com.example.pulseplayer.data.DocEntry
-import com.example.pulseplayer.data.FAVORITES_ID
-import com.example.pulseplayer.data.FolderEntity
-import com.example.pulseplayer.data.MediaScanner
-import com.example.pulseplayer.data.NaturalOrder
-import com.example.pulseplayer.data.PlaylistEntity
-import com.example.pulseplayer.data.PlaylistItem
-import com.example.pulseplayer.data.Track
-import com.example.pulseplayer.data.toItem
-import com.example.pulseplayer.data.toMediaItem
-import com.example.pulseplayer.data.toTrack
+import com.semenenko.pulseplayer.PlaybackService
+import com.semenenko.pulseplayer.R
+import com.semenenko.pulseplayer.data.AppDb
+import com.semenenko.pulseplayer.data.AppSettings
+import com.semenenko.pulseplayer.data.DocEntry
+import com.semenenko.pulseplayer.data.FAVORITES_ID
+import com.semenenko.pulseplayer.data.FolderEntity
+import com.semenenko.pulseplayer.data.MediaScanner
+import com.semenenko.pulseplayer.data.NaturalOrder
+import com.semenenko.pulseplayer.data.PlaylistEntity
+import com.semenenko.pulseplayer.data.PlaylistItem
+import com.semenenko.pulseplayer.data.Track
+import com.semenenko.pulseplayer.data.TrackInfo
+import com.semenenko.pulseplayer.data.toItem
+import com.semenenko.pulseplayer.data.toMediaItem
+import com.semenenko.pulseplayer.data.toTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -321,8 +322,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val why = error.cause?.let { " · ${it.javaClass.simpleName}: ${it.message}" }.orEmpty()
-            _errors.tryEmit((error.errorCodeName + why).take(160))
+            val app = getApplication<Application>()
+            if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED) {
+                // Формат контейнера не поддерживается (например WMA/APE): понятное сообщение вместо технического
+                val item = controller?.currentMediaItem
+                val title = item?.mediaMetadata?.title?.toString().orEmpty()
+                val mime = item?.mediaId?.let { id -> runCatching { app.contentResolver.getType(Uri.parse(id)) }.getOrNull() }
+                _errors.tryEmit(app.getString(R.string.unsupported_format, title, mime?.ifBlank { null } ?: "?"))
+            } else {
+                val why = error.cause?.let { " · ${it.javaClass.simpleName}: ${it.message}" }.orEmpty()
+                _errors.tryEmit(app.getString(R.string.playback_error, (error.errorCodeName + why).take(160)))
+            }
             val c = controller ?: return
             // нечитаемый/битый файл — пропускаем к следующему (не более 5 подряд)
             if (error.errorCode in 2000..4999 && skipStreak < 5 && c.hasNextMediaItem()) {
@@ -428,6 +438,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Список открытой вкладки/экрана: с его первого трека стартует «Плей» после полной остановки. */
+    val trackInfo = MutableStateFlow<TrackInfo?>(null)
+    fun showTrackInfo(t: Track) { viewModelScope.launch { trackInfo.value = scanner.trackInfo(t) } }
+
+    /** Переключатель «перемешать» для списка: включает и запускает список вперемешку, повторное нажатие — выключает. */
+    fun shuffleList(list: List<Track>) {
+        withController { c ->
+            if (c.shuffleModeEnabled) c.shuffleModeEnabled = false
+            else playTracks(list, shuffle = true)
+        }
+    }
+
     val contextTracks = MutableStateFlow<List<Track>>(emptyList())
     private val _stopped = MutableStateFlow(false)
     val stopped: StateFlow<Boolean> = _stopped.asStateFlow()

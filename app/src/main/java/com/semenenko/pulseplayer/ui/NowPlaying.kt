@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
-package com.example.pulseplayer.ui
+package com.semenenko.pulseplayer.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -30,9 +30,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import androidx.compose.ui.platform.LocalView
-import com.example.pulseplayer.R
-import com.example.pulseplayer.audio.EqualizerManager
-import com.example.pulseplayer.data.AppSettings
+import com.semenenko.pulseplayer.R
+import com.semenenko.pulseplayer.audio.EqualizerManager
+import com.semenenko.pulseplayer.data.AppSettings
 
 @Composable
 fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
@@ -74,7 +74,7 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
         ) {
             StateIconButton(Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle) { vm.toggleShuffle() }
             StateIconButton(Icons.Rounded.SkipPrevious, stringResource(R.string.previous), enabled = has) { vm.previous() }
-            FilledIconButton(onClick = { vm.togglePlay() }, Modifier.size(44.dp)) {
+            FilledIconButton(onClick = { vm.togglePlay() }, Modifier.size(44.dp), shape = IconShape) {
                 Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     stringResource(if (ui.isPlaying) R.string.pause else R.string.play))
             }
@@ -194,7 +194,7 @@ fun NowPlayingScreen(vm: MainViewModel, onClose: () -> Unit, onOpenEq: () -> Uni
                     IconButton(onClick = { vm.previous() }, Modifier.size(56.dp)) {
                         Icon(Icons.Rounded.SkipPrevious, stringResource(R.string.previous), Modifier.size(36.dp))
                     }
-                    FilledIconButton(onClick = { vm.togglePlay() }, Modifier.size(76.dp)) {
+                    FilledIconButton(onClick = { vm.togglePlay() }, Modifier.size(76.dp), shape = RoundedCornerShape(24.dp)) {
                         Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             stringResource(if (ui.isPlaying) R.string.pause else R.string.play), Modifier.size(44.dp))
                     }

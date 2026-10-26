@@ -1,4 +1,4 @@
-package com.example.pulseplayer.audio
+package com.semenenko.pulseplayer.audio
 
 import android.util.Log
 import androidx.media3.common.C

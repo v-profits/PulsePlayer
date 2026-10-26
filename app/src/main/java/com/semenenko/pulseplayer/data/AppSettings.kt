@@ -1,4 +1,4 @@
-package com.example.pulseplayer.data
+package com.semenenko.pulseplayer.data
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -19,6 +19,25 @@ object AppSettings {
 
     private val _keepScreenOn = MutableStateFlow(false)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
+
+    private val _ratePrompt = MutableStateFlow(false)
+    val ratePrompt: StateFlow<Boolean> = _ratePrompt.asStateFlow()
+
+    /** Вызывается при каждом реальном запуске: окно оценки — на 10-й раз, затем каждые 50 запусков, пока не оценено. */
+    fun registerLaunch() {
+        val p = prefs ?: return
+        if (p.getBoolean("rated", false)) return
+        val n = p.getInt("launch_count", 0) + 1
+        p.edit().putInt("launch_count", n).apply()
+        if (n == 10 || (n > 10 && (n - 10) % 50 == 0)) _ratePrompt.value = true
+    }
+
+    fun requestRate() { _ratePrompt.value = true }
+    fun dismissRatePrompt() { _ratePrompt.value = false }
+    fun markRated() {
+        prefs?.edit()?.putBoolean("rated", true)?.apply()
+        _ratePrompt.value = false
+    }
 
     fun init(ctx: Context) {
         if (prefs != null) return

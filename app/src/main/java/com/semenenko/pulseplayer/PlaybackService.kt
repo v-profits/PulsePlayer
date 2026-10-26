@@ -1,4 +1,4 @@
-package com.example.pulseplayer
+package com.semenenko.pulseplayer
 
 import android.app.PendingIntent
 import android.content.Context
@@ -18,7 +18,7 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import com.example.pulseplayer.audio.EqualizerManager
+import com.semenenko.pulseplayer.audio.EqualizerManager
 
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {

@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
-package com.example.pulseplayer.ui
+package com.semenenko.pulseplayer.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
@@ -48,8 +48,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.AsyncImage
-import com.example.pulseplayer.R
-import com.example.pulseplayer.data.Track
+import com.semenenko.pulseplayer.R
+import com.semenenko.pulseplayer.data.Track
 
 @Composable
 fun quantityString(id: Int, n: Int): String = LocalContext.current.resources.getQuantityString(id, n, n)
@@ -62,6 +62,9 @@ fun formatTime(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }
 
+/** Единая форма иконок-кнопок: скруглённый квадрат. */
+val IconShape = RoundedCornerShape(12.dp)
+
 class SelectionState {
     val uris = mutableStateListOf<String>()
     val active: Boolean get() = uris.isNotEmpty()
@@ -69,7 +72,7 @@ class SelectionState {
     fun clear() = uris.clear()
 }
 
-enum class TrackAction { PLAY_NEXT, ADD_TO_QUEUE, ADD_TO_PLAYLIST, FAVORITE, REMOVE }
+enum class TrackAction { PLAY_NEXT, ADD_TO_QUEUE, ADD_TO_PLAYLIST, FAVORITE, INFO, REMOVE }
 
 @Composable
 fun Artwork(uri: String?, modifier: Modifier = Modifier, corner: Dp = 10.dp) {
@@ -123,7 +126,7 @@ fun StateIconButton(
         else -> cs.onSurfaceVariant
     }
     Box(
-        modifier.size(size).clip(CircleShape)
+        modifier.size(size).clip(IconShape)
             .background(if (active && enabled) cs.primaryContainer else Color.Transparent)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -135,9 +138,9 @@ fun StateIconButton(
 fun SelectionBadge(selected: Boolean, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     Box(
-        modifier.size(22.dp).clip(CircleShape)
+        modifier.size(22.dp).clip(RoundedCornerShape(7.dp))
             .background(if (selected) cs.primary else cs.surface.copy(alpha = 0.8f))
-            .border(2.dp, if (selected) cs.primary else cs.outline, CircleShape),
+            .border(2.dp, if (selected) cs.primary else cs.outline, RoundedCornerShape(7.dp)),
         contentAlignment = Alignment.Center,
     ) {
         if (selected) Icon(Icons.Rounded.Check, null, tint = cs.onPrimary, modifier = Modifier.size(14.dp))
@@ -197,7 +200,8 @@ fun TrackRow(
             )
             val artist = track.artist.ifBlank { stringResource(R.string.unknown_artist) }
             Text(
-                if (track.durationMs > 0) "$artist · ${formatTime(track.durationMs)}" else artist,
+                listOfNotNull(track.artist.takeIf { it.isNotBlank() }, track.durationMs.takeIf { it > 0 }?.let { formatTime(it) })
+                    .joinToString(" · ").ifBlank { artist },
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (selected) cs.onSecondaryContainer.copy(alpha = 0.8f) else cs.onSurfaceVariant,
@@ -207,6 +211,7 @@ fun TrackRow(
             if (favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             stringResource(if (favorite) R.string.favorite_remove else R.string.favorite_add), favorite,
         ) { onAction(TrackAction.FAVORITE) }
+        Spacer(Modifier.width(4.dp))
         StateIconButton(
             if (inPlaylist) Icons.Rounded.LibraryAddCheck else Icons.Rounded.LibraryAdd,
             stringResource(R.string.add_to_playlist), inPlaylist,
@@ -231,6 +236,7 @@ fun TrackRow(
                     if (favorite) Icons.Rounded.FavoriteBorder else Icons.Rounded.Favorite,
                     TrackAction.FAVORITE,
                 )()
+                item(R.string.track_info, Icons.Rounded.Info, TrackAction.INFO)()
                 if (canRemove) item(R.string.remove, Icons.Rounded.Delete, TrackAction.REMOVE)()
             }
         }
@@ -269,6 +275,7 @@ fun TrackList(
                         TrackAction.ADD_TO_QUEUE -> vm.addToQueue(listOf(t))
                         TrackAction.ADD_TO_PLAYLIST -> vm.pickPlaylistFor(listOf(t))
                         TrackAction.FAVORITE -> vm.toggleFavorite(t)
+                        TrackAction.INFO -> vm.showTrackInfo(t)
                         TrackAction.REMOVE -> onRemove?.invoke(t)
                     }
                 },
@@ -285,12 +292,13 @@ fun PlayShuffleRow(tracks: List<Track>, vm: MainViewModel, trailing: @Composable
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilledIconButton(onClick = { vm.playTracks(tracks, 0, shuffle = false) }) {
+        FilledIconButton(onClick = { vm.playTracks(tracks, 0) }, shape = IconShape) {
             Icon(Icons.Rounded.PlayArrow, stringResource(R.string.play))
         }
-        FilledTonalIconButton(onClick = { vm.playTracks(tracks, shuffle = true) }) {
-            Icon(Icons.Rounded.Shuffle, stringResource(R.string.shuffle))
-        }
+        StateIconButton(
+            Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle,
+            size = 48.dp, iconSize = 24.dp,
+        ) { vm.shuffleList(tracks) }
         StateIconButton(
             if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             stringResource(R.string.repeat), ui.repeat != Player.REPEAT_MODE_OFF,
