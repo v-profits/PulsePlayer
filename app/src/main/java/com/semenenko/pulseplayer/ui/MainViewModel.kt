@@ -92,8 +92,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val query = MutableStateFlow("")
     val sort = MutableStateFlow(SortMode.TITLE)
 
-    val tracks: StateFlow<List<Track>> = combine(_library, query, sort, AppSettings.minLength) { all, q, s, minLen ->
-        val lib = if (minLen > 0) all.filter { it.durationMs >= minLen * 1000L } else all
+    /** Библиотека после фильтров настроек: скрытие коротких и разделение «музыка / книги». */
+    private val filteredLibrary = combine(
+        _library, AppSettings.minLength, AppSettings.contentFilter, AppSettings.bookMinutes,
+    ) { all, minLen, mode, bookMin ->
+        all.filter { t ->
+            val isBook = t.isBook || t.durationMs >= bookMin * 60_000L
+            (minLen <= 0 || t.durationMs >= minLen * 1000L) && when (mode) {
+                1 -> !isBook
+                2 -> isBook
+                else -> true
+            }
+        }
+    }
+
+    val tracks: StateFlow<List<Track>> = combine(filteredLibrary, query, sort) { lib, q, s ->
         val f = if (q.isBlank()) lib else lib.filter {
             it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)
         }
@@ -463,7 +476,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val list = contextTracks.value.ifEmpty { tracks.value }
         if (list.isEmpty()) return
         _stopped.value = false
-        playTracks(list, 0)
+        // при включённом «перемешать» старт сразу со случайного трека, а не с первого
+        withController { c ->
+            val start = if (c.shuffleModeEnabled) list.indices.random() else 0
+            playTracks(list, start)
+        }
     }
 
     fun playTracksRepeat(list: List<Track>) {

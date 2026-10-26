@@ -31,8 +31,12 @@ class MediaScanner(private val ctx: Context) {
             MediaStore.Audio.Media.DATE_ADDED,
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.DISPLAY_NAME,
-        )
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= 1000"
+            MediaStore.Audio.Media.IS_PODCAST,
+        ).let { cols ->
+            if (Build.VERSION.SDK_INT >= 29) cols + MediaStore.Audio.Media.IS_AUDIOBOOK else cols
+        }
+        val bookFlag = if (Build.VERSION.SDK_INT >= 29) " OR ${MediaStore.Audio.Media.IS_AUDIOBOOK} != 0" else ""
+        val selection = "(${MediaStore.Audio.Media.IS_MUSIC} != 0 OR ${MediaStore.Audio.Media.IS_PODCAST} != 0$bookFlag) AND ${MediaStore.Audio.Media.DURATION} >= 1000"
         ctx.contentResolver.query(
             base, projection, selection, null,
             "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
@@ -40,6 +44,8 @@ class MediaScanner(private val ctx: Context) {
             while (c.moveToNext()) {
                 val id = c.getLong(0)
                 val albumId = c.getLong(4)
+                val folder = c.getString(7)?.substringBeforeLast('/', "").orEmpty()
+                val flagged = c.getInt(9) != 0 || (Build.VERSION.SDK_INT >= 29 && c.getInt(10) != 0)
                 out += Track(
                     uri = ContentUris.withAppendedId(base, id).toString(),
                     title = c.getString(1).orEmpty(),
@@ -48,8 +54,9 @@ class MediaScanner(private val ctx: Context) {
                     durationMs = c.getLong(5),
                     artUri = if (albumId > 0) ContentUris.withAppendedId(artBase, albumId).toString() else null,
                     dateAdded = c.getLong(6),
-                    folder = c.getString(7)?.substringBeforeLast('/', "").orEmpty(),
+                    folder = folder,
                     fileName = c.getString(8).orEmpty().substringBeforeLast('.'),
+                    isBook = flagged || BOOK_PATH.containsMatchIn(folder),
                 )
             }
         }
@@ -269,6 +276,9 @@ class MediaScanner(private val ctx: Context) {
     }
 
     companion object {
+        /** Папки с «аудиокнигами/подкастами» в названии считаем речевым контентом. */
+        private val BOOK_PATH = Regex("(?i)audio[ _-]?book|аудио[ _-]?книг|podcast|подкаст")
+
         private val AUDIO_EXT = setOf(
             "mp3", "flac", "wav", "ogg", "oga", "opus", "m4a", "aac", "alac", "aif", "aiff",
             "mka", "amr", "awb", "mid", "midi", "wma", "ape", "wv", "ac3", "eac3", "dts", "mp2", "3gp"

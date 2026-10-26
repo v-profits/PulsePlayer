@@ -35,7 +35,7 @@ import com.semenenko.pulseplayer.audio.EqualizerManager
 import com.semenenko.pulseplayer.data.AppSettings
 
 @Composable
-fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
+fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, stopped: Boolean, onOpen: () -> Unit) {
     val pos by vm.position.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
     val inPlaylists by vm.playlistUris.collectAsStateWithLifecycle()
@@ -57,7 +57,7 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, onOpen: () -> Unit) {
             Artwork(t?.artUri, Modifier.size(46.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(t?.title ?: stringResource(R.string.stopped), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                Text(t?.title ?: stringResource(if (stopped) R.string.stopped else R.string.nothing_playing), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold)
                 Text(
                     if (t != null) t.artist.ifBlank { stringResource(R.string.unknown_artist) }

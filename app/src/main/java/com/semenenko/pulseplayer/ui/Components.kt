@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.media3.common.Player
+import com.semenenko.pulseplayer.audio.EqualizerManager
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -539,4 +540,15 @@ fun SeekBar(
         drawLine(activeColor, Offset(x0, cy), Offset(xv, cy), strokeWidth = h, cap = StrokeCap.Round)
         drawCircle(activeColor, if (dragFrac != null) r * 1.25f else r, Offset(xv, cy))
     }
+}
+
+/** Эквалайзер (с индикацией включения) и настройки — доступны на любом экране, в том числе внутри папки или плейлиста. */
+@Composable
+fun GlobalActions(onOpen: (Dest) -> Unit) {
+    val eq by EqualizerManager.state.collectAsStateWithLifecycle()
+    StateIconButton(
+        Icons.Rounded.Tune, stringResource(R.string.equalizer), eq.params.enabled,
+        size = 48.dp, iconSize = 24.dp,
+    ) { onOpen(Dest.Equalizer) }
+    IconButton(onClick = { onOpen(Dest.Settings) }) { Icon(Icons.Rounded.Settings, stringResource(R.string.settings)) }
 }

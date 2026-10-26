@@ -43,6 +43,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpen: (Dest) -> Unit
     val ctx = LocalContext.current
     val theme by AppSettings.theme.collectAsStateWithLifecycle()
     val minLen by AppSettings.minLength.collectAsStateWithLifecycle()
+    val bookMin by AppSettings.bookMinutes.collectAsStateWithLifecycle()
     val keepOn by AppSettings.keepScreenOn.collectAsStateWithLifecycle()
     var lang by remember { mutableIntStateOf(currentLanguage()) }
     var dialog by remember { mutableStateOf<String?>(null) }
@@ -60,6 +61,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpen: (Dest) -> Unit
     )
     val minLenOptions = listOf(stringResource(R.string.min_len_off) to 0) +
         listOf(15, 30, 60, 120).map { stringResource(R.string.seconds_fmt, it) to it }
+    val bookOptions = listOf(5, 10, 15, 20, 30, 45, 60).map { stringResource(R.string.book_len_fmt, it) to it }
     val version = remember {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull().orEmpty()
     }
@@ -79,6 +81,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpen: (Dest) -> Unit
             Header(R.string.settings_library)
             Row0(Icons.Rounded.Timer, stringResource(R.string.settings_min_length),
                 minLenOptions.firstOrNull { it.second == minLen }?.first ?: minLenOptions.first().first) { dialog = "minlen" }
+            Row0(Icons.Rounded.MenuBook, stringResource(R.string.settings_book_length),
+                bookOptions.firstOrNull { it.second == bookMin }?.first ?: stringResource(R.string.book_len_fmt, bookMin)) { dialog = "bookmin" }
             Row0(Icons.Rounded.Refresh, stringResource(R.string.rescan), null) { vm.rescan() }
 
             Header(R.string.settings_playback)
@@ -110,6 +114,8 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpen: (Dest) -> Unit
             { dialog = null; lang = it; applyLanguage(it) }, { dialog = null })
         "minlen" -> ChoiceDialog(stringResource(R.string.settings_min_length), minLenOptions, minLen,
             { dialog = null; AppSettings.setMinLength(it) }, { dialog = null })
+        "bookmin" -> ChoiceDialog(stringResource(R.string.settings_book_length), bookOptions, bookMin,
+            { dialog = null; AppSettings.setBookMinutes(it) }, { dialog = null })
     }
 }
 

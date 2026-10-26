@@ -17,6 +17,12 @@ object AppSettings {
     private val _minLength = MutableStateFlow(0)    // скрывать треки короче N секунд (0 — не скрывать)
     val minLength: StateFlow<Int> = _minLength.asStateFlow()
 
+    private val _contentFilter = MutableStateFlow(0)   // 0 — все, 1 — музыка, 2 — книги
+    val contentFilter: StateFlow<Int> = _contentFilter.asStateFlow()
+
+    private val _bookMinutes = MutableStateFlow(20)    // трек длиннее N минут считается «книгой»
+    val bookMinutes: StateFlow<Int> = _bookMinutes.asStateFlow()
+
     private val _keepScreenOn = MutableStateFlow(false)
     val keepScreenOn: StateFlow<Boolean> = _keepScreenOn.asStateFlow()
 
@@ -46,6 +52,8 @@ object AppSettings {
         _theme.value = p.getInt("theme", 0)
         _minLength.value = p.getInt("min_length", 0)
         _keepScreenOn.value = p.getBoolean("keep_screen_on", false)
+        _contentFilter.value = p.getInt("content_filter", 0)
+        _bookMinutes.value = p.getInt("book_minutes", 20)
         applyTheme(_theme.value)
     }
 
@@ -63,6 +71,16 @@ object AppSettings {
     fun setKeepScreenOn(on: Boolean) {
         _keepScreenOn.value = on
         prefs?.edit()?.putBoolean("keep_screen_on", on)?.apply()
+    }
+
+    fun setContentFilter(v: Int) {
+        _contentFilter.value = v
+        prefs?.edit()?.putInt("content_filter", v)?.apply()
+    }
+
+    fun setBookMinutes(v: Int) {
+        _bookMinutes.value = v
+        prefs?.edit()?.putInt("book_minutes", v)?.apply()
     }
 
     private fun applyTheme(v: Int) {

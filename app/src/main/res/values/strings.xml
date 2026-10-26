@@ -178,9 +178,9 @@
     <string name="settings_contact">Contact the developer</string>
     <string name="help_title">User guide</string>
     <string name="help_1_title">Playing music</string>
-    <string name="help_1_body">Open the Tracks tab and tap a track: the whole list becomes the queue. The mini player at the bottom has play and pause, stop, previous and next, shuffle, repeat, favorite and add-to-playlist buttons. Tap the arrows icon or the track name to open the full screen player. Drag your finger along the progress bar to seek. Stop clears the queue; pressing play afterwards starts from the first track of the list you have open. Active buttons are filled with color, inactive ones are muted, unavailable ones are pale.</string>
+    <string name="help_1_body">The mini player at the bottom is always visible: play and pause, stop, previous and next, shuffle, repeat, favorite and add-to-playlist buttons. Press play to start the list you have open from its first track (or from a random one if shuffle is on). Tap a track to play the whole list from it. Tap the arrows icon or the title to open the full screen player. Drag along the progress bar to seek. Stop clears the queue. Active buttons are filled with color, inactive ones are muted, unavailable ones are pale.</string>
     <string name="help_2_title">Library, search and sorting</string>
-    <string name="help_2_body">Tabs: Tracks, Albums, Artists, Folders, Playlists and Files. Use the magnifier to search; the microphone adds spoken text to what is already typed. The sort button offers title, file name, artist, recently added and duration. Numbers in names are sorted naturally: 1, 2, 3 … 10, 11, 12.</string>
+    <string name="help_2_body">Tabs: Tracks, Albums, Artists, Folders, Playlists and Files. Under the tabs choose All, Music or Books: books are audiobooks, podcasts and any track longer than the length set in Settings. The magnifier searches and the sort button orders the list (title, file name, artist, recently added, duration). Inside a folder or playlist the top bar has its own search, sort menu, equalizer and settings. The microphone adds spoken text. Numbers in names are sorted naturally: 1, 2, 3 … 10, 11, 12.</string>
     <string name="help_3_title">Selecting several items</string>
     <string name="help_3_body">Long-press a track, album, artist or folder to start selecting, then tap the others. Selected items get a colored highlight and a check mark; unselected ones show an empty circle. The bar at the top lets you play, play next, add to the queue, add to a playlist or to favorites, or play the selection on repeat. Folders can be selected and played without opening them.</string>
     <string name="help_4_title">Files tab and your own folders</string>
@@ -197,4 +197,11 @@
     <string name="help_9_body">Popular formats work: MP3, FLAC, WAV, OGG, Opus, AAC, M4A, MKA, AMR. Rare formats such as WMA, APE or DSD are not supported: such a file is skipped with a message. Open About track to see the real format of a file. If playback problems appear in the audio chain, the player switches to a safe mode without the equalizer automatically.</string>
     <string name="help_10_title">Support</string>
     <string name="help_10_body">Questions and bug reports: vl.profits@gmail.com. Please include the version number from Settings → About.</string>
+    <string name="filter_all">All</string>
+    <string name="filter_music">Music</string>
+    <string name="filter_books">Books</string>
+    <string name="settings_book_length">Audiobook length</string>
+    <string name="book_len_fmt">From %d min</string>
+    <string name="sort_default">Default order</string>
+    <string name="eq_select_band">Touch a band to fine-tune it</string>
 </resources>

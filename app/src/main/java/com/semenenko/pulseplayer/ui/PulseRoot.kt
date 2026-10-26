@@ -69,7 +69,7 @@ fun PulseRoot(vm: MainViewModel) {
             contentWindowInsets = WindowInsets(0),
             bottomBar = {
                 Column(Modifier.background(MaterialTheme.colorScheme.surfaceContainer)) {
-                    if (ui.current != null || stopped) MiniPlayer(ui, vm) { showNow = true }
+                    MiniPlayer(ui, vm, stopped) { showNow = true }
                     Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
                 }
             },
@@ -85,14 +85,15 @@ fun PulseRoot(vm: MainViewModel) {
                         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                             val top = entry === stack.lastOrNull()
                             when (val d = entry.dest) {
-                                is Dest.Tracks -> TrackListScreen(d.title, d.tracks, vm, pop, isTop = top)
-                                is Dest.Playlist -> PlaylistScreen(d.id, d.name, vm, pop, top)
+                                is Dest.Tracks -> TrackListScreen(d.title, d.tracks, vm, pop, isTop = top, onOpen = push)
+                                is Dest.Playlist -> PlaylistScreen(d.id, d.name, vm, pop, top, push)
                                 is Dest.Browse -> BrowseScreen(vm, d, pop) { push(it) }
                                 Dest.Picked -> {
                                     val pk by vm.picked.collectAsStateWithLifecycle()
                                     TrackListScreen(
                                         stringResource(R.string.selected_files), pk, vm, pop,
                                         isTop = top,
+                                        onOpen = push,
                                         onRemove = { vm.removePicked(it) },
                                         emptyText = stringResource(R.string.files_empty_title),
                                     )

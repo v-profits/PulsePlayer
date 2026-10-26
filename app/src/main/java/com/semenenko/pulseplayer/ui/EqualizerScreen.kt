@@ -60,7 +60,7 @@ fun EqualizerScreen(onBack: () -> Unit) {
     val p = s.params
     val names = stringArrayResource(R.array.eq_preset_names)
     val half = DspParams.BAND_FREQS.size / 2
-    var selected by rememberSaveable { mutableIntStateOf(5) }
+    var selected by rememberSaveable { mutableIntStateOf(-1) }   // -1 — ни одна полоса не выбрана
     val cardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
 
     Column(Modifier.fillMaxSize()) {
@@ -76,7 +76,9 @@ fun EqualizerScreen(onBack: () -> Unit) {
             },
         )
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.weight(1f).verticalScroll(rememberScrollState())
+                .pointerInput(Unit) { detectTapGestures(onTap = { selected = -1 }) }   // тап вне бегунков снимает выделение
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(stringResource(R.string.eq_presets), style = MaterialTheme.typography.titleSmall)
@@ -157,6 +159,13 @@ private fun freqFull(hz: Int): String =
 
 @Composable
 private fun FineTunePanel(index: Int, gain: Float) {
+    if (index < 0) {
+        Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.eq_select_band), style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
     val hz = DspParams.BAND_FREQS.getOrElse(index) { 1000 }
     fun set(v: Float) = EqualizerManager.setBand(index, ((v.coerceIn(-DspParams.MAX_DB, DspParams.MAX_DB)) * 10).roundToInt() / 10f)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -225,19 +234,26 @@ private fun BandSlider(
     val cs = MaterialTheme.colorScheme
     val currentOnChange by rememberUpdatedState(onChange)
     val currentOnTouch by rememberUpdatedState(onTouch)
+    val currentGain by rememberUpdatedState(gain)
     Canvas(
         modifier
-            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { currentOnTouch(); currentOnChange(0f) }) }
+            // тап по полосе — выбрать её, двойной — в ноль (прокрутка экрана пальцем по полосе ничего не меняет)
+            .pointerInput(Unit) { detectTapGestures(onTap = { currentOnTouch() }, onDoubleTap = { currentOnTouch(); currentOnChange(0f) }) }
+            // значение меняется только если взяться за сам ползунок
             .pointerInput(Unit) {
                 val pad = BAND_PAD.toPx()
+                val grab = 28.dp.toPx()
+                fun yOf(g: Float) = pad + (size.height - 2 * pad) * (1f - (g + max) / (2 * max))
                 fun toGain(y: Float): Float {
                     val f = 1f - ((y - pad) / (size.height - 2 * pad)).coerceIn(0f, 1f)
                     return ((-max + f * 2 * max) * 2).roundToInt() / 2f
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown()
+                    val cx = size.width / 2f
+                    if (abs(down.position.x - cx) > grab || abs(down.position.y - yOf(currentGain)) > grab) return@awaitEachGesture
                     currentOnTouch()
-                    currentOnChange(toGain(down.position.y))
+                    down.consume()
                     drag(down.id) { ch ->
                         currentOnChange(toGain(ch.position.y))
                         ch.consume()
@@ -335,24 +351,35 @@ private fun FineSlider(
     val lo = range.start
     val hi = range.endInclusive
     fun snap(v: Float) = ((v / step).roundToInt() * step).coerceIn(lo, hi)
+    val currentValue by rememberUpdatedState(value)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         StepButton(Icons.Rounded.Remove) { fast -> onChange(snap(value - if (fast) step * 5 else step)) }
         Canvas(
-            Modifier.weight(1f).height(54.dp).pointerInput(lo, hi, step) {
-                val padX = 14.dp.toPx()
-                fun toValue(x: Float): Float {
-                    val f = ((x - padX) / (size.width - 2 * padX)).coerceIn(0f, 1f)
-                    return snap(lo + f * (hi - lo))
+            Modifier.weight(1f).height(54.dp)
+                // тап по шкале — перейти в эту точку
+                .pointerInput(lo, hi, step) {
+                    val padX = 14.dp.toPx()
+                    detectTapGestures(onTap = { off ->
+                        val f = ((off.x - padX) / (size.width - 2 * padX)).coerceIn(0f, 1f)
+                        currentOnChange(snap(lo + f * (hi - lo)))
+                    })
                 }
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    currentOnChange(toValue(down.position.x))
-                    drag(down.id) { ch ->
-                        currentOnChange(toValue(ch.position.x))
-                        ch.consume()
+                // перетаскивание — только за сам ползунок, чтобы не задевать его при прокрутке экрана
+                .pointerInput(lo, hi, step) {
+                    val padX = 14.dp.toPx()
+                    val grab = 30.dp.toPx()
+                    fun frac(x: Float) = ((x - padX) / (size.width - 2 * padX)).coerceIn(0f, 1f)
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        val xv = padX + (size.width - 2 * padX) * ((currentValue - lo) / (hi - lo)).coerceIn(0f, 1f)
+                        if (abs(down.position.x - xv) > grab) return@awaitEachGesture
+                        down.consume()
+                        drag(down.id) { ch ->
+                            currentOnChange(snap(lo + frac(ch.position.x) * (hi - lo)))
+                            ch.consume()
+                        }
                     }
                 }
-            }
         ) {
             val padX = 14.dp.toPx()
             val usable = size.width - 2 * padX

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.semenenko.pulseplayer.R
+import com.semenenko.pulseplayer.data.AppSettings
 import com.semenenko.pulseplayer.audio.EqualizerManager
 import com.semenenko.pulseplayer.data.DocEntry
 import kotlinx.coroutines.launch
@@ -64,6 +65,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
     val tracks by vm.tracks.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val eqState by EqualizerManager.state.collectAsStateWithLifecycle()
+    val contentFilter by AppSettings.contentFilter.collectAsStateWithLifecycle()
 
     val albums by vm.albums.collectAsStateWithLifecycle()
     val artists by vm.artists.collectAsStateWithLifecycle()
@@ -202,6 +204,10 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
             }
         }
 
+        if (tab == HomeTab.TRACKS || isGroupTab) {
+            ContentFilterRow(contentFilter, tracks.size) { AppSettings.setContentFilter(it) }
+        }
+
         HorizontalPager(pager, Modifier.weight(1f), beyondViewportPageCount = 0) { p ->
             when (tabs[p]) {
                 HomeTab.TRACKS -> LibraryGate(granted, onGrant) {
@@ -211,7 +217,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                             stringResource(if (query.isNotBlank()) R.string.no_results else R.string.library_empty),
                         )
                     } else {
-                        TrackList(tracks, vm, selection, header = { PlayShuffleRow(tracks, vm) })
+                        TrackList(tracks, vm, selection)
                     }
                 }
                 HomeTab.ALBUMS -> LibraryGate(granted, onGrant) {
@@ -233,6 +239,26 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                 HomeTab.FILES -> FilesTab(vm, onOpen, groupSel)
             }
         }
+    }
+}
+
+/** Разделение музыки и аудиокниг: «Все / Музыка / Книги» + количество треков. */
+@Composable
+private fun ContentFilterRow(selected: Int, count: Int, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf(R.string.filter_all, R.string.filter_music, R.string.filter_books).forEachIndexed { i, res ->
+            FilterChip(selected = selected == i, onClick = { onSelect(i) }, label = { Text(stringResource(res)) })
+        }
+        Spacer(Modifier.weight(1f))
+        Text(
+            quantityString(R.plurals.tracks_count, count),
+            style = MaterialTheme.typography.labelLarge, maxLines = 1,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

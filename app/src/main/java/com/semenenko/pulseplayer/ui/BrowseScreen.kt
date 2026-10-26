@@ -69,6 +69,7 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
                             tint = if (isFav) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    GlobalActions(onOpen)
                 },
             )
         }
