@@ -59,6 +59,7 @@ fun TrackListScreen(
     var menu by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
+    val listKey = remember { "screen:" + java.util.UUID.randomUUID() }   // отдельный ключ у каждого открытого экрана-списка
 
     val shown = remember(tracks, query, sort) {
         val f = if (query.isBlank()) tracks else tracks.filter {
@@ -161,14 +162,14 @@ fun TrackListScreen(
                 },
             )
         }
-        if (shown.isNotEmpty()) PlayShuffleRow(shown, vm)
+        if (shown.isNotEmpty()) PlayShuffleRow(shown, vm, listKey)
         if (shown.isEmpty()) {
             EmptyState(
                 Icons.Rounded.QueueMusic,
                 if (query.isNotBlank()) stringResource(R.string.no_results) else emptyText ?: stringResource(R.string.library_empty),
             )
         } else {
-            TrackList(shown, vm, selection, onRemove = onRemove)
+            TrackList(shown, vm, selection, onRemove = onRemove, sourceKey = listKey)
         }
     }
 }

@@ -66,6 +66,9 @@ fun formatTime(ms: Long): String {
 /** Единая форма иконок-кнопок: скруглённый квадрат. */
 val IconShape = RoundedCornerShape(12.dp)
 
+/** Подпись списка: по ней понимаем, играет ли именно этот список (вкладка/папка/плейлист с этим содержимым). */
+fun listSig(key: String, tracks: List<Track>): String = "$key|${tracks.size}|${tracks.firstOrNull()?.uri}"
+
 class SelectionState {
     val uris = mutableStateListOf<String>()
     val active: Boolean get() = uris.isNotEmpty()
@@ -118,17 +121,19 @@ fun StateIconButton(
     enabled: Boolean = true,
     size: Dp = 40.dp,
     iconSize: Dp = 22.dp,
+    strong: Boolean = false,   // яркая заливка (как у главной кнопки Play) вместо светлой
     onClick: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val tint = when {
         !enabled -> cs.onSurface.copy(alpha = 0.28f)
+        active && strong -> cs.onPrimary
         active -> cs.onPrimaryContainer
         else -> cs.onSurfaceVariant
     }
     Box(
         modifier.size(size).clip(IconShape)
-            .background(if (active && enabled) cs.primaryContainer else Color.Transparent)
+            .background(if (active && enabled) (if (strong) cs.primary else cs.primaryContainer) else Color.Transparent)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, desc, Modifier.size(iconSize), tint = tint) }
@@ -252,6 +257,7 @@ fun TrackList(
     modifier: Modifier = Modifier,
     header: (@Composable () -> Unit)? = null,
     onRemove: ((Track) -> Unit)? = null,
+    sourceKey: String? = null,
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
@@ -268,7 +274,10 @@ fun TrackList(
                 favorite = t.uri in favs,
                 inPlaylist = t.uri in inPlaylists,
                 canRemove = onRemove != null,
-                onClick = { if (selection.active) selection.toggle(t.uri) else vm.playTracks(tracks, index) },
+                onClick = {
+                    if (selection.active) selection.toggle(t.uri)
+                    else vm.playTracks(tracks, index, source = sourceKey?.let { listSig(it, tracks) })
+                },
                 onLongClick = { selection.toggle(t.uri) },
                 onAction = {
                     when (it) {
@@ -286,24 +295,35 @@ fun TrackList(
 }
 
 @Composable
-fun PlayShuffleRow(tracks: List<Track>, vm: MainViewModel, trailing: @Composable RowScope.() -> Unit = {}) {
+fun PlayShuffleRow(
+    tracks: List<Track>,
+    vm: MainViewModel,
+    sourceKey: String,
+    trailing: @Composable RowScope.() -> Unit = {},
+) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val playSource by vm.playSource.collectAsStateWithLifecycle()
+    val sig = listSig(sourceKey, tracks)
+    // Кнопка «включена» (значок паузы) только на том списке/вкладке, где её нажали
+    val playingHere = ui.isPlaying && playSource == sig
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilledIconButton(onClick = { vm.playFromTop(tracks) }, shape = IconShape) {
-            Icon(Icons.Rounded.PlayArrow, stringResource(R.string.play))
-        }
+        StateIconButton(
+            if (playingHere) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+            stringResource(if (playingHere) R.string.pause else R.string.play), playingHere,
+            size = 48.dp, iconSize = 26.dp, strong = true,
+        ) { vm.playFromTop(tracks, sig) }
         StateIconButton(
             Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle,
-            size = 48.dp, iconSize = 24.dp,
+            size = 48.dp, iconSize = 24.dp, strong = true,
         ) { vm.toggleShuffle() }
         StateIconButton(
             if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             stringResource(R.string.repeat), ui.repeat != Player.REPEAT_MODE_OFF,
-            size = 48.dp, iconSize = 24.dp,
+            size = 48.dp, iconSize = 24.dp, strong = true,
         ) { vm.cycleRepeat() }
         Spacer(Modifier.weight(1f))
         Text(

@@ -206,7 +206,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
 
         if (tab == HomeTab.TRACKS || isGroupTab) {
             ContentFilterRow(contentFilter) { AppSettings.setContentFilter(it) }
-            PlayShuffleRow(contextList, vm)
+            PlayShuffleRow(contextList, vm, "tab:${tab.name}")
         }
 
         HorizontalPager(pager, Modifier.weight(1f), beyondViewportPageCount = 0) { p ->
@@ -218,7 +218,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                             stringResource(if (query.isNotBlank()) R.string.no_results else R.string.library_empty),
                         )
                     } else {
-                        TrackList(tracks, vm, selection)
+                        TrackList(tracks, vm, selection, sourceKey = "tab:TRACKS")
                     }
                 }
                 HomeTab.ALBUMS -> LibraryGate(granted, onGrant) {

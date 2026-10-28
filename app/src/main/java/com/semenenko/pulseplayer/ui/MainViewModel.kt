@@ -413,9 +413,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (c != null) block(c) else pending += block
     }
 
-    fun playTracks(list: List<Track>, start: Int = 0, shuffle: Boolean? = null) {
+    fun playTracks(list: List<Track>, start: Int = 0, shuffle: Boolean? = null, source: String? = null) {
         if (list.isEmpty()) return
         withController { c ->
+            playSource.value = source
             if (shuffle != null) c.shuffleModeEnabled = shuffle
             val startIndex = if (shuffle == true) list.indices.random() else start.coerceIn(list.indices)
             c.setMediaItems(list.map { it.toMediaItem() }, startIndex, 0L)
@@ -462,6 +463,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Подпись списка, с которого запущено воспроизведение (для вида кнопки Play над списком). */
+    val playSource = MutableStateFlow<String?>(null)
+
     val contextTracks = MutableStateFlow<List<Track>>(emptyList())
     private val _stopped = MutableStateFlow(false)
     val stopped: StateFlow<Boolean> = _stopped.asStateFlow()
@@ -469,6 +473,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Полный стоп: остановка, очередь очищается, позиция сбрасывается. */
     fun stopPlayback() {
         _stopped.value = true
+        playSource.value = null
         withController { it.pause(); it.stop(); it.clearMediaItems() }
     }
 
@@ -476,19 +481,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val openPlayer = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     /** Играет переданный список с начала; при включённом «перемешать» — со случайного трека. */
-    fun playList(list: List<Track>) {
+    fun playList(list: List<Track>, source: String? = null) {
         if (list.isEmpty()) return
         _stopped.value = false
         withController { c ->
             val start = if (c.shuffleModeEnabled) list.indices.random() else 0
-            playTracks(list, start)
+            playTracks(list, start, source = source)
         }
     }
 
     /** «Play» над списком: играет открытый на экране список. */
-    fun playFromTop(list: List<Track>) {
-        playList(list)
-        if (list.isNotEmpty() && AppSettings.openPlayerOnPlay.value) openPlayer.tryEmit(Unit)
+    fun playFromTop(list: List<Track>, sig: String) {
+        if (list.isEmpty()) return
+        if (playSource.value == sig && _ui.value.current != null) {
+            onMiniPlay()   // этот же список уже запущен: пауза / продолжение
+            return
+        }
+        playList(list, sig)
+        if (AppSettings.openPlayerOnPlay.value) openPlayer.tryEmit(Unit)
     }
 
     /** «Play» в мини-плеере: пауза/продолжение текущей очереди; при запуске может открыть полный экран. */
