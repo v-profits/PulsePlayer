@@ -68,7 +68,11 @@ fun formatTime(ms: Long): String {
 val IconShape = RoundedCornerShape(12.dp)
 
 /** Подпись списка: по ней понимаем, играет ли именно этот список (вкладка/папка/плейлист с этим содержимым). */
-fun listSig(key: String, tracks: List<Track>): String = "$key|${tracks.size}|${tracks.firstOrNull()?.uri}"
+fun listSig(key: String, tracks: List<Track>): String {
+    var h = 17
+    for (t in tracks) h = 31 * h + t.uri.hashCode()   // зависит от набора и порядка треков, а не от экрана
+    return "$key|${tracks.size}|$h"
+}
 
 class SelectionState {
     val uris = mutableStateListOf<String>()
@@ -304,7 +308,7 @@ fun PlayShuffleRow(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val playSource by vm.playSource.collectAsStateWithLifecycle()
-    val sig = listSig(sourceKey, tracks)
+    val sig = remember(sourceKey, tracks) { listSig(sourceKey, tracks) }
     // Кнопка «включена» (значок паузы) только на том списке/вкладке, где её нажали
     val playingHere = ui.isPlaying && playSource == sig
     Row(

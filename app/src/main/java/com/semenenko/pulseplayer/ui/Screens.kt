@@ -59,7 +59,9 @@ fun TrackListScreen(
     var menu by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
-    val listKey = remember { "screen:" + java.util.UUID.randomUUID() }   // отдельный ключ у каждого открытого экрана-списка
+    // Один общий ключ для всех экранов-списков: «играет этот список» определяется по содержимому,
+    // поэтому папка/альбом/исполнитель/плейлист узнаётся и после выхода и повторного открытия
+    val listKey = "list"
 
     val shown = remember(tracks, query, sort) {
         val f = if (query.isBlank()) tracks else tracks.filter {
