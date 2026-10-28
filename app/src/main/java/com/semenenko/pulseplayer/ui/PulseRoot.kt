@@ -59,6 +59,7 @@ fun PulseRoot(vm: MainViewModel) {
     }
     LaunchedEffect(Unit) { vm.messages.collect { snack.showSnackbar(ctx.getString(it)) } }
     LaunchedEffect(Unit) { vm.errors.collect { snack.showSnackbar(it) } }
+    LaunchedEffect(Unit) { vm.openPlayer.collect { showNow = true } }
 
     BackHandler(enabled = stack.isNotEmpty()) { pop() }
     BackHandler(enabled = showNow) { showNow = false }

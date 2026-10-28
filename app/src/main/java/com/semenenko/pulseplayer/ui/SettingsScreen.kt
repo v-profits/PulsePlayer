@@ -45,6 +45,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpen: (Dest) -> Unit
     val minLen by AppSettings.minLength.collectAsStateWithLifecycle()
     val bookMin by AppSettings.bookMinutes.collectAsStateWithLifecycle()
     val keepOn by AppSettings.keepScreenOn.collectAsStateWithLifecycle()
+    val openOnPlay by AppSettings.openPlayerOnPlay.collectAsStateWithLifecycle()
     var lang by remember { mutableIntStateOf(currentLanguage()) }
     var dialog by remember { mutableStateOf<String?>(null) }
 
@@ -92,6 +93,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onOpen: (Dest) -> Unit
                 leadingContent = { Icon(Icons.Rounded.Smartphone, null, tint = MaterialTheme.colorScheme.primary) },
                 trailingContent = { Switch(checked = keepOn, onCheckedChange = { AppSettings.setKeepScreenOn(it) }) },
                 modifier = Modifier.clickable { AppSettings.setKeepScreenOn(!keepOn) },
+            )
+
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.settings_open_player)) },
+                supportingContent = { Text(stringResource(R.string.settings_open_player_desc)) },
+                leadingContent = { Icon(Icons.Rounded.OpenInFull, null, tint = MaterialTheme.colorScheme.primary) },
+                trailingContent = { Switch(checked = openOnPlay, onCheckedChange = { AppSettings.setOpenPlayerOnPlay(it) }) },
+                modifier = Modifier.clickable { AppSettings.setOpenPlayerOnPlay(!openOnPlay) },
             )
 
             Header(R.string.settings_about)

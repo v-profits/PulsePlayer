@@ -293,13 +293,13 @@ fun PlayShuffleRow(tracks: List<Track>, vm: MainViewModel, trailing: @Composable
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilledIconButton(onClick = { vm.playTracks(tracks, 0) }, shape = IconShape) {
+        FilledIconButton(onClick = { vm.playFromTop(tracks) }, shape = IconShape) {
             Icon(Icons.Rounded.PlayArrow, stringResource(R.string.play))
         }
         StateIconButton(
             Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle,
             size = 48.dp, iconSize = 24.dp,
-        ) { vm.shuffleList(tracks) }
+        ) { vm.toggleShuffle() }
         StateIconButton(
             if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             stringResource(R.string.repeat), ui.repeat != Player.REPEAT_MODE_OFF,

@@ -178,7 +178,7 @@
     <string name="settings_contact">Contact the developer</string>
     <string name="help_title">User guide</string>
     <string name="help_1_title">Playing music</string>
-    <string name="help_1_body">The mini player at the bottom is always visible: play and pause, stop, previous and next, shuffle, repeat, favorite and add-to-playlist buttons. Press play to start the list you have open from its first track (or from a random one if shuffle is on). Tap a track to play the whole list from it. Tap the arrows icon or the title to open the full screen player. Drag along the progress bar to seek. Stop clears the queue. Active buttons are filled with color, inactive ones are muted, unavailable ones are pale.</string>
+    <string name="help_1_body">The mini player at the bottom is always visible: play and pause, stop, previous and next, shuffle, repeat, favorite and add-to-playlist buttons. The Play button above a list (Tracks, Albums, Artists, Folders tabs or inside a folder or playlist) plays exactly the list that is open on the screen, from its first track or from a random one if shuffle is on. Play in the mini player pauses and resumes whatever is already playing. Tap a track to play the whole list from it. Tap the arrows icon or the title to open the full screen player, and collapse it to keep browsing. Settings → Open player on Play can open the full screen player automatically. Drag along the progress bar to seek. Stop clears the queue. Active buttons are filled with color, inactive ones are muted, unavailable ones are pale.</string>
     <string name="help_2_title">Library, search and sorting</string>
     <string name="help_2_body">Tabs: Tracks, Albums, Artists, Folders, Playlists and Files. Under the tabs choose All, Music or Books: books are audiobooks, podcasts and any track longer than the length set in Settings. The magnifier searches and the sort button orders the list (title, file name, artist, recently added, duration). Inside a folder or playlist the top bar has its own search, sort menu, equalizer and settings. The microphone adds spoken text. Numbers in names are sorted naturally: 1, 2, 3 … 10, 11, 12.</string>
     <string name="help_3_title">Selecting several items</string>
@@ -204,4 +204,6 @@
     <string name="book_len_fmt">From %d min</string>
     <string name="sort_default">Default order</string>
     <string name="eq_select_band">Touch a band to fine-tune it</string>
+    <string name="settings_open_player">Open player on Play</string>
+    <string name="settings_open_player_desc">Opens the full screen player when playback is started with Play. Off: you open it yourself</string>
 </resources>

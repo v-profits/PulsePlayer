@@ -205,7 +205,8 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
         }
 
         if (tab == HomeTab.TRACKS || isGroupTab) {
-            ContentFilterRow(contentFilter, tracks.size) { AppSettings.setContentFilter(it) }
+            ContentFilterRow(contentFilter) { AppSettings.setContentFilter(it) }
+            PlayShuffleRow(contextList, vm)
         }
 
         HorizontalPager(pager, Modifier.weight(1f), beyondViewportPageCount = 0) { p ->
@@ -244,7 +245,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
 
 /** Разделение музыки и аудиокниг: «Все / Музыка / Книги» + количество треков. */
 @Composable
-private fun ContentFilterRow(selected: Int, count: Int, onSelect: (Int) -> Unit) {
+private fun ContentFilterRow(selected: Int, onSelect: (Int) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -253,12 +254,6 @@ private fun ContentFilterRow(selected: Int, count: Int, onSelect: (Int) -> Unit)
         listOf(R.string.filter_all, R.string.filter_music, R.string.filter_books).forEachIndexed { i, res ->
             FilterChip(selected = selected == i, onClick = { onSelect(i) }, label = { Text(stringResource(res)) })
         }
-        Spacer(Modifier.weight(1f))
-        Text(
-            quantityString(R.plurals.tracks_count, count),
-            style = MaterialTheme.typography.labelLarge, maxLines = 1,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

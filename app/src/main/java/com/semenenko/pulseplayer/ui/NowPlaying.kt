@@ -74,7 +74,7 @@ fun MiniPlayer(ui: PlayerUi, vm: MainViewModel, stopped: Boolean, onOpen: () -> 
         ) {
             StateIconButton(Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle) { vm.toggleShuffle() }
             StateIconButton(Icons.Rounded.SkipPrevious, stringResource(R.string.previous), enabled = has) { vm.previous() }
-            FilledIconButton(onClick = { vm.togglePlay() }, Modifier.size(44.dp), shape = IconShape) {
+            FilledIconButton(onClick = { vm.onMiniPlay() }, Modifier.size(44.dp), shape = IconShape) {
                 Icon(if (ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     stringResource(if (ui.isPlaying) R.string.pause else R.string.play))
             }

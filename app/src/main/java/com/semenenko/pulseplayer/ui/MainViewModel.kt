@@ -472,6 +472,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         withController { it.pause(); it.stop(); it.clearMediaItems() }
     }
 
+    /** Событие «открыть полный экран плеера» (если включено в настройках). */
+    val openPlayer = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Играет переданный список с начала; при включённом «перемешать» — со случайного трека. */
+    fun playList(list: List<Track>) {
+        if (list.isEmpty()) return
+        _stopped.value = false
+        withController { c ->
+            val start = if (c.shuffleModeEnabled) list.indices.random() else 0
+            playTracks(list, start)
+        }
+    }
+
+    /** «Play» над списком: играет открытый на экране список. */
+    fun playFromTop(list: List<Track>) {
+        playList(list)
+        if (list.isNotEmpty() && AppSettings.openPlayerOnPlay.value) openPlayer.tryEmit(Unit)
+    }
+
+    /** «Play» в мини-плеере: пауза/продолжение текущей очереди; при запуске может открыть полный экран. */
+    fun onMiniPlay() {
+        val wasPlaying = _ui.value.isPlaying
+        togglePlay()
+        if (!wasPlaying && AppSettings.openPlayerOnPlay.value) openPlayer.tryEmit(Unit)
+    }
+
     fun playContext() {
         val list = contextTracks.value.ifEmpty { tracks.value }
         if (list.isEmpty()) return

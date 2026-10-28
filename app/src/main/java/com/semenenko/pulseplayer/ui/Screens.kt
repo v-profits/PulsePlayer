@@ -161,6 +161,7 @@ fun TrackListScreen(
                 },
             )
         }
+        if (shown.isNotEmpty()) PlayShuffleRow(shown, vm)
         if (shown.isEmpty()) {
             EmptyState(
                 Icons.Rounded.QueueMusic,
