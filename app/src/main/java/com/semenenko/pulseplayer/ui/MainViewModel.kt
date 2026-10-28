@@ -201,7 +201,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     val playlistUris: StateFlow<Set<String>> = dao.observePlaylistUris().map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+    /** id плейлиста → множество uri его треков (включая «Избранное»). */
+    val membership: StateFlow<Map<Long, Set<String>>> = dao.observeMembership()
+        .map { rows -> rows.groupBy({ it.playlistId }, { it.uri }).mapValues { it.value.toSet() } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     val playlistPicker = MutableStateFlow<List<Track>?>(null)
+
+    fun removeTracksFromPlaylist(id: Long, list: List<Track>) =
+        viewModelScope.launch { list.forEach { dao.deleteByUri(id, it.uri) } }
 
     fun playlistItems(id: Long): Flow<List<PlaylistItem>> = dao.observeItems(id)
 
@@ -228,7 +235,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         var pos = dao.maxPosition(id)
         val items = list.distinctBy { it.uri }.filter { it.uri !in existing }.map { it.toItem(id, ++pos) }
         if (items.isNotEmpty()) dao.insertItems(items)
-        _messages.tryEmit(message)
+        _messages.tryEmit(if (items.isEmpty()) R.string.msg_already_added else message)
     }
 
     fun toggleFavorite(t: Track) {

@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.media3.common.Player
 import com.semenenko.pulseplayer.audio.EqualizerManager
+import com.semenenko.pulseplayer.data.FAVORITES_ID
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -311,19 +312,26 @@ fun PlayShuffleRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        StateIconButton(
-            if (playingHere) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-            stringResource(if (playingHere) R.string.pause else R.string.play), playingHere,
-            size = 48.dp, iconSize = 26.dp, strong = true,
-        ) { vm.playFromTop(tracks, sig) }
+        // Play: всегда с яркой заливкой, как в плеере; меняется только значок (▶ / пауза)
+        FilledIconButton(
+            onClick = { vm.playFromTop(tracks, sig) },
+            modifier = Modifier.size(44.dp),
+            shape = IconShape,
+        ) {
+            Icon(
+                if (playingHere) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                stringResource(if (playingHere) R.string.pause else R.string.play),
+            )
+        }
+        // Перемешать и повтор: без фона; когда включены — фон как у этих значков в плеере и размер как у Play
         StateIconButton(
             Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle,
-            size = 48.dp, iconSize = 24.dp, strong = true,
+            size = 44.dp, iconSize = 22.dp,
         ) { vm.toggleShuffle() }
         StateIconButton(
             if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             stringResource(R.string.repeat), ui.repeat != Player.REPEAT_MODE_OFF,
-            size = 48.dp, iconSize = 24.dp, strong = true,
+            size = 44.dp, iconSize = 22.dp,
         ) { vm.cycleRepeat() }
         Spacer(Modifier.weight(1f))
         Text(
@@ -468,9 +476,14 @@ fun NameDialog(titleRes: Int, initial: String, onDismiss: () -> Unit, onConfirm:
     )
 }
 
+/**
+ * Окно «Добавить в плейлист»: подсвечивает плейлисты, где трек уже есть (для нескольких треков — «N из M»),
+ * показывает, что трек в «Избранном», не создаёт дублей и позволяет убрать трек из плейлиста.
+ */
 @Composable
 fun AddToPlaylistDialog(tracks: List<Track>, vm: MainViewModel, onDismiss: () -> Unit) {
     val lists by vm.playlists.collectAsStateWithLifecycle()
+    val membership by vm.membership.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
     if (creating) {
         NameDialog(R.string.new_playlist, "", { creating = false }) {
@@ -478,11 +491,32 @@ fun AddToPlaylistDialog(tracks: List<Track>, vm: MainViewModel, onDismiss: () ->
         }
         return
     }
+    val cs = MaterialTheme.colorScheme
+    val total = tracks.size
+    val favMembers = membership[FAVORITES_ID].orEmpty()
+    val inFav = tracks.count { it.uri in favMembers }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.add_to_playlist)) },
         text = {
             LazyColumn {
+                if (inFav > 0) {
+                    item {
+                        Column {
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        if (total == 1) stringResource(R.string.in_favorites)
+                                        else stringResource(R.string.in_favorites_count, inFav, total)
+                                    )
+                                },
+                                leadingContent = { Icon(Icons.Rounded.Favorite, null, tint = cs.primary) },
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+                }
                 item {
                     ListItem(
                         headlineContent = { Text(stringResource(R.string.new_playlist)) },
@@ -492,16 +526,42 @@ fun AddToPlaylistDialog(tracks: List<Track>, vm: MainViewModel, onDismiss: () ->
                     )
                 }
                 itemsIndexed(lists.filter { !it.playlist.isSystem }, key = { _, p -> p.playlist.id }) { _, p ->
+                    val members = membership[p.playlist.id].orEmpty()
+                    val have = tracks.count { it.uri in members }
+                    val all = total > 0 && have == total
+                    val count = quantityString(R.plurals.tracks_count, p.itemCount)
                     ListItem(
-                        headlineContent = {
-                            Text(if (p.playlist.isSystem) stringResource(R.string.favorites) else p.playlist.name)
+                        headlineContent = { Text(p.playlist.name) },
+                        supportingContent = {
+                            Text(
+                                when {
+                                    all -> stringResource(R.string.already_in_playlist) + " · " + count
+                                    have > 0 -> stringResource(R.string.in_playlist_count, have, total) + " · " + count
+                                    else -> count
+                                },
+                                color = if (have > 0) cs.primary else cs.onSurfaceVariant,
+                            )
                         },
-                        supportingContent = { Text(quantityString(R.plurals.tracks_count, p.itemCount)) },
                         leadingContent = {
-                            Icon(if (p.playlist.isSystem) Icons.Rounded.Favorite else Icons.Rounded.QueueMusic, null)
+                            Icon(
+                                if (all) Icons.Rounded.CheckCircle else Icons.Rounded.QueueMusic, null,
+                                tint = if (have > 0) cs.primary else LocalContentColor.current,
+                            )
                         },
-                        modifier = Modifier.clickable { vm.addToPlaylist(p.playlist.id, tracks); onDismiss() },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        trailingContent = {
+                            if (have > 0) {
+                                IconButton(onClick = { vm.removeTracksFromPlaylist(p.playlist.id, tracks) }) {
+                                    Icon(Icons.Rounded.RemoveCircleOutline, stringResource(R.string.remove_from_playlist))
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { vm.addToPlaylist(p.playlist.id, tracks); onDismiss() },
+                        colors = ListItemDefaults.colors(
+                            containerColor = if (have > 0) cs.secondaryContainer else Color.Transparent,
+                            headlineColor = if (have > 0) cs.onSecondaryContainer else cs.onSurface,
+                        ),
                     )
                 }
             }

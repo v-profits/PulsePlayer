@@ -186,7 +186,7 @@
     <string name="help_4_title">Files tab and your own folders</string>
     <string name="help_4_body">On the Files tab add folders (for example on an SD card) or pick single files. Tap a folder to browse it, press the play icon to play everything inside. Long-press folders to select several and play them or add them to playlists and favorites.</string>
     <string name="help_5_title">Playlists and favorites</string>
-    <string name="help_5_body">The heart in a track row adds the track to Favorites. The playlist icon opens your playlists; it turns into a check mark when the track is already in one. Open Favorites or any playlist and use the broom icon to clear it. The shuffle icon above a list turns shuffling on or off and stays in sync with the player.</string>
+    <string name="help_5_body">The heart in a track row adds the track to Favorites. The playlist icon opens your playlists and turns into a check mark when the track is already in one. In that window playlists that already contain the track are highlighted (for several tracks it shows how many of them are there), the window tells you if the track is in Favorites, never creates duplicates, and the minus button takes the track out of a playlist. Open Favorites or any playlist and use the menu to clear it. The shuffle icon above a list turns shuffling on or off and stays in sync with the player.</string>
     <string name="help_6_title">Equalizer</string>
     <string name="help_6_body">Open it with the sliders icon; the icon is highlighted while the equalizer is on. Switch it on, choose a preset or drag the 12 bands (double-tap a band to reset it). Below are preamp, bass, treble, stereo width, balance and other effects. Tap a value to reset it.</string>
     <string name="help_7_title">Track information</string>
@@ -206,4 +206,10 @@
     <string name="eq_select_band">Touch a band to fine-tune it</string>
     <string name="settings_open_player">Open player on Play</string>
     <string name="settings_open_player_desc">Opens the full screen player when playback is started with Play. Off: you open it yourself</string>
+    <string name="in_favorites">In Favorites</string>
+    <string name="in_favorites_count">In Favorites: %1$d of %2$d</string>
+    <string name="already_in_playlist">Already in this playlist</string>
+    <string name="in_playlist_count">Already added: %1$d of %2$d</string>
+    <string name="msg_already_added">Already added, no duplicates created</string>
+    <string name="remove_from_playlist">Remove from this playlist</string>
 </resources>

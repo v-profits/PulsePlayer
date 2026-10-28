@@ -59,6 +59,9 @@ data class FolderEntity(
     val addedAt: Long = System.currentTimeMillis(),
 )
 
+/** Пара «плейлист — трек»: нужна, чтобы показывать, в каких плейлистах трек уже есть. */
+data class PlaylistUri(val playlistId: Long, val uri: String)
+
 data class PlaylistWithCount(
     @Embedded val playlist: PlaylistEntity,
     val itemCount: Int,
@@ -103,6 +106,9 @@ interface PlaylistDao {
 
     @Query("DELETE FROM playlist_items WHERE playlistId = :id")
     suspend fun clearPlaylist(id: Long)
+
+    @Query("SELECT playlistId, uri FROM playlist_items")
+    fun observeMembership(): Flow<List<PlaylistUri>>
 
     @Query("SELECT DISTINCT uri FROM playlist_items WHERE playlistId != 1")
     fun observePlaylistUris(): Flow<List<String>>
