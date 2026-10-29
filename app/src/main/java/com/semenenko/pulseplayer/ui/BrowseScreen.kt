@@ -38,6 +38,7 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
     val selection = remember { SelectionState() }
     val files = remember(list) { list.orEmpty().filter { !it.isDir } }
     val selected = list.orEmpty().filter { it.uri.toString() in selection.uris }
+    val allSelected = !list.isNullOrEmpty() && list.all { it.uri.toString() in selection.uris }
     val isFav = dest.uri in favUris
     val self = remember(dest.uri) { DocEntry(folderUri, dest.name, true) }
 
@@ -48,8 +49,11 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
             SelectionBar(
                 count = selection.uris.size,
                 onClose = { selection.clear() },
-                onSelectAll = { list.orEmpty().forEach { if (it.uri.toString() !in selection.uris) selection.uris.add(it.uri.toString()) } },
-                onPlay = { vm.browserAction(selected, dest.name, BrowserAction.PLAY); selection.clear() },
+                onSelectAll = {
+                    if (allSelected) selection.clear()
+                    else list.orEmpty().forEach { if (it.uri.toString() !in selection.uris) selection.uris.add(it.uri.toString()) }
+                },
+                allSelected = allSelected,
                 onPlayNext = { vm.browserAction(selected, dest.name, BrowserAction.PLAY_NEXT); selection.clear() },
                 onQueue = { vm.browserAction(selected, dest.name, BrowserAction.QUEUE); selection.clear() },
                 onPlaylist = { vm.browserAction(selected, dest.name, BrowserAction.PLAYLIST); selection.clear() },
@@ -81,10 +85,12 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
             list.isEmpty() -> EmptyState(Icons.Rounded.Folder, stringResource(R.string.empty_folder))
             else -> LazyColumn(Modifier.fillMaxSize()) {
                 item(key = "header") {
-                    // одна кнопка «Играть» для открытой папки; перемешать — в мини-плеере
-                    val thisPlaying = ui.current != null && playSource == dirSource(dest.uri)
-                    ListPlayBar(thisPlaying && ui.isPlaying, ui.shuffle, null) {
-                        if (thisPlaying) vm.onMiniPlay() else vm.browserAction(listOf(self), dest.name, BrowserAction.PLAY)
+                    // Без выделения играет вся папка, с выделением — только выделенное.
+                    // Число треков известно, пока среди элементов нет вложенных папок.
+                    val relevant = if (selection.active) selected else list
+                    ListPlayBar(if (relevant.none { it.isDir }) relevant.size else null) {
+                        if (selection.active) { vm.browserAction(selected, dest.name, BrowserAction.PLAY); selection.clear() }
+                        else vm.browserAction(listOf(self), dest.name, BrowserAction.PLAY)
                     }
                 }
                 items(list, key = { it.uri.toString() }) { e ->

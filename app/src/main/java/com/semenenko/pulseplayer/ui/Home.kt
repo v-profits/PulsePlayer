@@ -77,11 +77,13 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
     val ui by vm.ui.collectAsStateWithLifecycle()
     val playSource by vm.playSource.collectAsStateWithLifecycle()
     val plSort by vm.playlistSort.collectAsStateWithLifecycle()
+    val playlists by vm.playlistsSorted.collectAsStateWithLifecycle()
     val groupSel = remember { SelectionState() }
 
     val page = pager.currentPage
     val tab = tabs[page]
     val isFolderTab = tab == HomeTab.FILES
+    val isPlaylistTab = tab == HomeTab.PLAYLISTS
     val isGroupTab = tab == HomeTab.ALBUMS || tab == HomeTab.ARTISTS || tab == HomeTab.FOLDERS
     val groups = when (tab) {
         HomeTab.ALBUMS -> albums
@@ -102,6 +104,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
     val selectedTracks = if (groupSel.active) {
         groups.filter { it.key in groupSel.uris }.flatMap { it.tracks }.distinctBy { it.uri }
     } else tracks.filter { it.uri in selection.uris }
+    val selectedPlaylistIds = playlists.filter { it.playlist.id.toString() in groupSel.uris }.map { it.playlist.id }
     val anySelection = selection.active || groupSel.active
     val contextList = remember(tab, tracks, groups) {
         when {
@@ -119,39 +122,61 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
 
     Column(Modifier.fillMaxSize()) {
         if (anySelection) {
+            val allSelected = when {
+                isFolderTab -> folderEntries.isNotEmpty() && folderEntries.all { it.uri in groupSel.uris }
+                isPlaylistTab -> playlists.isNotEmpty() && playlists.all { it.playlist.id.toString() in groupSel.uris }
+                isGroupTab -> groups.isNotEmpty() && groups.all { it.key in groupSel.uris }
+                else -> tracks.isNotEmpty() && tracks.all { it.uri in selection.uris }
+            }
             SelectionBar(
                 count = if (groupSel.active) groupSel.uris.size else selection.uris.size,
                 onClose = clearAll,
                 onSelectAll = {
-                    when {
+                    if (allSelected) clearAll()   // повторное нажатие снимает выделение
+                    else when {
                         isFolderTab -> folderEntries.forEach { if (it.uri !in groupSel.uris) groupSel.uris.add(it.uri) }
+                        isPlaylistTab -> playlists.forEach { groupSel.uris.add(it.playlist.id.toString()) }
                         isGroupTab -> groups.forEach { if (it.key !in groupSel.uris) groupSel.uris.add(it.key) }
                         else -> tracks.forEach { if (it.uri !in selection.uris) selection.uris.add(it.uri) }
                     }
                 },
-                onPlay = {
-                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.PLAY) else vm.playList(selectedTracks)
-                    clearAll()
-                },
+                allSelected = allSelected,
                 onPlayNext = {
-                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.PLAY_NEXT) else vm.playNext(selectedTracks)
+                    when {
+                        isFolderTab -> vm.browserAction(selectedFolders, "", BrowserAction.PLAY_NEXT)
+                        isPlaylistTab -> vm.withPlaylistTracks(selectedPlaylistIds) { vm.playNext(it) }
+                        else -> vm.playNext(selectedTracks)
+                    }
                     clearAll()
                 },
                 onQueue = {
-                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.QUEUE) else vm.addToQueue(selectedTracks)
+                    when {
+                        isFolderTab -> vm.browserAction(selectedFolders, "", BrowserAction.QUEUE)
+                        isPlaylistTab -> vm.withPlaylistTracks(selectedPlaylistIds) { vm.addToQueue(it) }
+                        else -> vm.addToQueue(selectedTracks)
+                    }
                     clearAll()
                 },
                 onPlaylist = {
-                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.PLAYLIST) else vm.pickPlaylistFor(selectedTracks)
+                    when {
+                        isFolderTab -> vm.browserAction(selectedFolders, "", BrowserAction.PLAYLIST)
+                        isPlaylistTab -> vm.withPlaylistTracks(selectedPlaylistIds) { vm.pickPlaylistFor(it) }
+                        else -> vm.pickPlaylistFor(selectedTracks)
+                    }
                     clearAll()
                 },
-                extra = if (isFolderTab) listOf(
-                    R.string.fav_folders_add to { vm.browserAction(selectedFolders, "", BrowserAction.FAV_FOLDERS); clearAll() },
-                    R.string.fav_tracks_add to { vm.browserAction(selectedFolders, "", BrowserAction.FAV_TRACKS); clearAll() },
-                ) else listOf(
-                    R.string.fav_tracks_add to { vm.addToFavorites(selectedTracks); clearAll() },
-                    R.string.play_selected_repeat to { vm.playTracksRepeat(selectedTracks); clearAll() },
-                ),
+                extra = when {
+                    isFolderTab -> listOf(
+                        R.string.fav_folders_add to { vm.browserAction(selectedFolders, "", BrowserAction.FAV_FOLDERS); clearAll() },
+                        R.string.fav_tracks_add to { vm.browserAction(selectedFolders, "", BrowserAction.FAV_TRACKS); clearAll() },
+                    )
+                    isPlaylistTab -> listOf(
+                        R.string.fav_tracks_add to { vm.withPlaylistTracks(selectedPlaylistIds) { vm.addToFavorites(it) }; clearAll() },
+                    )
+                    else -> listOf(
+                        R.string.fav_tracks_add to { vm.addToFavorites(selectedTracks); clearAll() },
+                    )
+                },
             )
         } else {
             var sortMenu by remember { mutableStateOf(false) }
@@ -228,9 +253,29 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
         if (tab == HomeTab.TRACKS || isGroupTab) {
             ContentFilterRow(contentFilter) { AppSettings.setContentFilter(it) }
         }
-        // При выборе элементов «Играть» остаётся только в панели выбора, поэтому кнопка над списком скрыта
-        AnimatedVisibility(!anySelection && (tab == HomeTab.TRACKS || isGroupTab) && contextList.isNotEmpty()) {
-            ListPlayRow(contextList, vm, "tab:${tab.name}")
+        // Единственная кнопка «Играть»: без выделения играет всю вкладку, с выделением — только выделенное
+        val barCount = when {
+            isPlaylistTab -> if (groupSel.active) playlists.filter { it.playlist.id.toString() in groupSel.uris }.sumOf { it.itemCount }
+                             else playlists.sumOf { it.itemCount }
+            isFolderTab -> if (groupSel.active) selectedFolders.size else folderEntries.size
+            anySelection -> selectedTracks.size
+            else -> contextList.size
+        }
+        if ((tab == HomeTab.TRACKS || isGroupTab || isPlaylistTab || isFolderTab) && barCount > 0) {
+            ListPlayBar(barCount, if (isFolderTab) R.plurals.folders_count else R.plurals.tracks_count) {
+                when {
+                    isFolderTab -> vm.browserAction(
+                        if (groupSel.active) selectedFolders else folderEntries.map { DocEntry(Uri.parse(it.uri), it.name, true) },
+                        "", BrowserAction.PLAY,
+                    )
+                    isPlaylistTab -> vm.withPlaylistTracks(
+                        if (groupSel.active) selectedPlaylistIds else playlists.map { it.playlist.id },
+                    ) { vm.playFromBar(it, null) }
+                    anySelection -> vm.playFromBar(selectedTracks, null)
+                    else -> vm.playFromBar(contextList, listSig("tab:${tab.name}", contextList))
+                }
+                clearAll()
+            }
         }
 
         HorizontalPager(pager, Modifier.weight(1f), beyondViewportPageCount = 0) { p ->
@@ -261,7 +306,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                         onOpen(Dest.Tracks(it.title.ifBlank { root }, it.tracks))
                     }
                 }
-                HomeTab.PLAYLISTS -> PlaylistsTab(vm, onOpen)
+                HomeTab.PLAYLISTS -> PlaylistsTab(vm, onOpen, groupSel)
                 HomeTab.FILES -> FilesTab(vm, onOpen, groupSel)
             }
         }
@@ -392,7 +437,7 @@ private fun GroupList(
 }
 
 @Composable
-private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit) {
+private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: SelectionState) {
     val lists by vm.playlistsSorted.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<Pair<Long, String>?>(null) }
@@ -416,15 +461,21 @@ private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit) {
     fun PlaylistRow(p: PlaylistWithCount) {
         var menu by remember { mutableStateOf(false) }
         val name = if (p.playlist.isSystem) favLabel else p.playlist.name
+        val key = p.playlist.id.toString()
+        val sel = key in selection.uris
         ListItem(
             headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingContent = { Text(quantityString(R.plurals.tracks_count, p.itemCount)) },
             leadingContent = {
-                Icon(if (p.playlist.isSystem) Icons.Rounded.Favorite else Icons.Rounded.QueueMusic, null,
-                    tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    when {
+                        sel -> Icons.Rounded.CheckCircle
+                        p.playlist.isSystem -> Icons.Rounded.Favorite
+                        else -> Icons.Rounded.QueueMusic
+                    }, null, tint = MaterialTheme.colorScheme.primary)
             },
             trailingContent = {
-                if (!p.playlist.isSystem) Box {
+                if (!p.playlist.isSystem && !selection.active) Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }
                     DropdownMenu(menu, { menu = false }) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.rename)) },
@@ -434,7 +485,13 @@ private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit) {
                     }
                 }
             },
-            modifier = Modifier.clickable { onOpen(Dest.Playlist(p.playlist.id, name)) },
+            colors = ListItemDefaults.colors(
+                containerColor = if (sel) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+            ),
+            modifier = Modifier.combinedClickable(
+                onClick = { if (selection.active) selection.toggle(key) else onOpen(Dest.Playlist(p.playlist.id, name)) },
+                onLongClick = { selection.toggle(key) },
+            ),
         )
     }
 

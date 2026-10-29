@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -518,6 +519,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         withController { c ->
             val start = if (c.shuffleModeEnabled) list.indices.random() else 0
             playTracks(list, start, source = source)
+        }
+    }
+
+    /**
+     * Кнопка «Играть» над списком: играет выбранное (или весь открытый список, если ничего не выбрано).
+     * Перемешивание и повтор берутся из состояния кнопок плеера.
+     */
+    fun playFromBar(list: List<Track>, source: String?) {
+        if (list.isEmpty()) return
+        playList(list, source)
+        if (AppSettings.openPlayerOnPlay.value) openPlayer.tryEmit(Unit)
+    }
+
+    /** Треки выбранных плейлистов (без дублей) — для воспроизведения и действий над выделенными плейлистами. */
+    fun withPlaylistTracks(ids: Collection<Long>, block: (List<Track>) -> Unit) {
+        viewModelScope.launch {
+            val list = ids.flatMap { id -> dao.observeItems(id).first().map { it.toTrack() } }.distinctBy { it.uri }
+            block(list)
         }
     }
 

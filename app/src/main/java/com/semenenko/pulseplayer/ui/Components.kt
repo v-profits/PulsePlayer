@@ -300,37 +300,21 @@ fun TrackList(
 }
 
 /**
- * Единственная кнопка «Играть» над открытым списком (вкладка, папка, альбом, исполнитель, плейлист).
- * Перемешать и повтор живут только в мини-плеере; если «перемешать» включено, список стартует со случайного трека.
+ * Единственная кнопка «Играть» над списком: ▶ Играть · N.
+ * N — сколько треков (или папок на вкладке «Файлы») на вкладке, а при выделении — сколько выделено.
+ * Перемешивание и повтор определяются кнопками плеера, поэтому здесь ничего про них не пишем.
  */
 @Composable
-fun ListPlayRow(tracks: List<Track>, vm: MainViewModel, sourceKey: String) {
-    val ui by vm.ui.collectAsStateWithLifecycle()
-    val playSource by vm.playSource.collectAsStateWithLifecycle()
-    val sig = remember(sourceKey, tracks) { listSig(sourceKey, tracks) }
-    ListPlayBar(ui.isPlaying && playSource == sig, ui.shuffle, tracks.size) { vm.playFromTop(tracks, sig) }
-}
-
-@Composable
-fun ListPlayBar(playing: Boolean, shuffled: Boolean, count: Int?, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+fun ListPlayBar(count: Int?, unitPlural: Int = R.plurals.tracks_count, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
     ) {
-        // Текстовая «таблетка», а не круглая иконка, как в плеере: сразу видно, что это «играть список»
-        FilledTonalButton(onClick = onClick, contentPadding = PaddingValues(start = 12.dp, end = 16.dp)) {
-            Icon(
-                when { playing -> Icons.Rounded.Pause; shuffled -> Icons.Rounded.Shuffle; else -> Icons.Rounded.PlayArrow },
-                null, Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(when { playing -> R.string.pause; shuffled -> R.string.play_shuffled; else -> R.string.play }), maxLines = 1)
-        }
-        Spacer(Modifier.weight(1f))
-        if (count != null) Text(
-            quantityString(R.plurals.tracks_count, count),
-            style = MaterialTheme.typography.labelLarge, maxLines = 1,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Icon(Icons.Rounded.PlayArrow, null, Modifier.size(22.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            stringResource(R.string.play) + if (count != null) " · " + quantityString(unitPlural, count) else "",
+            maxLines = 1,
         )
     }
 }
@@ -340,7 +324,7 @@ fun SelectionBar(
     count: Int,
     onClose: () -> Unit,
     onSelectAll: () -> Unit,
-    onPlay: () -> Unit,
+    allSelected: Boolean,
     onPlayNext: () -> Unit,
     onQueue: () -> Unit,
     onPlaylist: () -> Unit,
@@ -351,8 +335,13 @@ fun SelectionBar(
         title = { Text(stringResource(R.string.selected_count, count)) },
         navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Rounded.Close, stringResource(R.string.close)) } },
         actions = {
-            IconButton(onClick = onSelectAll) { Icon(Icons.Rounded.SelectAll, stringResource(R.string.select_all)) }
-            IconButton(onClick = onPlay) { Icon(Icons.Rounded.PlayArrow, stringResource(R.string.play)) }
+            // повторное нажатие, когда выделено всё, снимает выделение
+            IconButton(onClick = onSelectAll) {
+                Icon(
+                    if (allSelected) Icons.Rounded.Deselect else Icons.Rounded.SelectAll,
+                    stringResource(if (allSelected) R.string.deselect_all else R.string.select_all),
+                )
+            }
             IconButton(onClick = onPlaylist) { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, stringResource(R.string.add_to_playlist)) }
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }

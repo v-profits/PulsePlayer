@@ -92,19 +92,22 @@ fun TrackListScreen(
         )
     }
     val selected = shown.filter { it.uri in selection.uris }
+    val allSelected = shown.isNotEmpty() && shown.all { it.uri in selection.uris }
     Column(Modifier.fillMaxSize()) {
         if (selection.active) {
             SelectionBar(
                 count = selection.uris.size,
                 onClose = { selection.clear() },
-                onSelectAll = { shown.forEach { if (it.uri !in selection.uris) selection.uris.add(it.uri) } },
-                onPlay = { vm.playList(selected); selection.clear() },
+                onSelectAll = {
+                    if (allSelected) selection.clear()
+                    else shown.forEach { if (it.uri !in selection.uris) selection.uris.add(it.uri) }
+                },
+                allSelected = allSelected,
                 onPlayNext = { vm.playNext(selected); selection.clear() },
                 onQueue = { vm.addToQueue(selected); selection.clear() },
                 onPlaylist = { vm.pickPlaylistFor(selected); selection.clear() },
                 extra = listOf(
                     R.string.fav_tracks_add to { vm.addToFavorites(selected); selection.clear() },
-                    R.string.play_selected_repeat to { vm.playTracksRepeat(selected); selection.clear() },
                 ),
             )
         } else {
@@ -165,7 +168,10 @@ fun TrackListScreen(
                 },
             )
         }
-        AnimatedVisibility(shown.isNotEmpty() && !selection.active) { ListPlayRow(shown, vm, listKey) }
+        if (shown.isNotEmpty()) ListPlayBar(if (selection.active) selected.size else shown.size) {
+            if (selection.active) { vm.playFromBar(selected, null); selection.clear() }
+            else vm.playFromBar(shown, listSig(listKey, shown))
+        }
         if (shown.isEmpty()) {
             EmptyState(
                 Icons.Rounded.QueueMusic,
