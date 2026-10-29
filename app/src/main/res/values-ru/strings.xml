@@ -13,6 +13,8 @@
     <string name="sort_title">По названию</string>
     <string name="sort_artist">По исполнителю</string>
     <string name="sort_recent">Недавно добавленные</string>
+    <string name="sort_pl_created">Недавно созданные</string>
+    <string name="sort_pl_count">По количеству треков</string>
     <string name="sort_duration">По длительности</string>
     <string name="rescan">Обновить библиотеку</string>
     <string name="equalizer">Эквалайзер</string>

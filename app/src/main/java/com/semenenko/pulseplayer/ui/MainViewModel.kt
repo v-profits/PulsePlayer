@@ -24,6 +24,7 @@ import com.semenenko.pulseplayer.data.MediaScanner
 import com.semenenko.pulseplayer.data.NaturalOrder
 import com.semenenko.pulseplayer.data.PlaylistEntity
 import com.semenenko.pulseplayer.data.PlaylistItem
+import com.semenenko.pulseplayer.data.PlaylistWithCount
 import com.semenenko.pulseplayer.data.Track
 import com.semenenko.pulseplayer.data.TrackInfo
 import com.semenenko.pulseplayer.data.toItem
@@ -53,7 +54,17 @@ enum class SortMode(@StringRes val label: Int) {
     DURATION(R.string.sort_duration),
 }
 
+/** Сортировка вкладки «Плейлисты» («Избранное» всегда закреплено сверху и в сортировке не участвует). */
+enum class PlaylistSort(@StringRes val label: Int) {
+    CREATED(R.string.sort_pl_created),
+    NAME(R.string.sort_title),
+    COUNT(R.string.sort_pl_count),
+}
+
 enum class BrowserAction { PLAY, SHUFFLE, PLAY_NEXT, QUEUE, PLAYLIST, FAV_TRACKS, FAV_FOLDERS }
+
+/** Источник воспроизведения «папка из файловой системы» (вкладка «Файлы»). */
+fun dirSource(uri: String) = "dir:$uri"
 
 /** Порядок по имени файла с учётом чисел: 1, 2, 3 … 10, 11, 12. */
 val FileOrder = Comparator<Track> { a, b ->
@@ -197,6 +208,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Плейлисты ----------
     val playlists = dao.observePlaylists()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val playlistSort = MutableStateFlow(PlaylistSort.CREATED)
+    /** Плейлисты: «Избранное» первым, остальные — в выбранном порядке. */
+    val playlistsSorted: StateFlow<List<PlaylistWithCount>> = combine(playlists, playlistSort) { all, mode ->
+        val fav = all.filter { it.playlist.isSystem }
+        val rest = all.filterNot { it.playlist.isSystem }
+        fav + when (mode) {
+            PlaylistSort.CREATED -> rest.sortedByDescending { it.playlist.createdAt }
+            PlaylistSort.NAME -> rest.sortedWith(Comparator { a, b -> NaturalOrder.compare(a.playlist.name, b.playlist.name) })
+            PlaylistSort.COUNT -> rest.sortedByDescending { it.itemCount }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val favoriteUris: StateFlow<Set<String>> = dao.observeFavoriteUris().map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     val playlistUris: StateFlow<Set<String>> = dao.observePlaylistUris().map { it.toSet() }
@@ -309,9 +331,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _importing.value = false
             val list = tracks.distinctBy { it.uri }
             if (list.isEmpty()) return@launch
+            // запоминаем папку-источник, чтобы в списке папок показать, что в ней идёт воспроизведение
+            val src = entries.singleOrNull()?.takeIf { it.isDir }?.let { dirSource(it.uri.toString()) }
             when (action) {
-                BrowserAction.PLAY -> playTracks(list, 0)
-                BrowserAction.SHUFFLE -> playTracks(list, shuffle = true)
+                BrowserAction.PLAY -> playTracks(list, 0, source = src)
+                BrowserAction.SHUFFLE -> playTracks(list, shuffle = true, source = src)
                 BrowserAction.PLAY_NEXT -> playNext(list)
                 BrowserAction.QUEUE -> addToQueue(list)
                 BrowserAction.PLAYLIST -> pickPlaylistFor(list)

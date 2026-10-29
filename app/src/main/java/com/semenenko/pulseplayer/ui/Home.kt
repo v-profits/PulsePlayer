@@ -40,6 +40,7 @@ import com.semenenko.pulseplayer.R
 import com.semenenko.pulseplayer.data.AppSettings
 import com.semenenko.pulseplayer.audio.EqualizerManager
 import com.semenenko.pulseplayer.data.DocEntry
+import com.semenenko.pulseplayer.data.PlaylistWithCount
 import kotlinx.coroutines.launch
 
 enum class HomeTab(val label: Int) {
@@ -72,6 +73,9 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
     val folders by vm.folders.collectAsStateWithLifecycle()
     val sources by vm.sources.collectAsStateWithLifecycle()
     val favFolders by vm.favFolders.collectAsStateWithLifecycle()
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val playSource by vm.playSource.collectAsStateWithLifecycle()
+    val plSort by vm.playlistSort.collectAsStateWithLifecycle()
     val groupSel = remember { SelectionState() }
 
     val page = pager.currentPage
@@ -83,6 +87,14 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
         HomeTab.ARTISTS -> artists
         HomeTab.FOLDERS -> folders
         else -> emptyList()
+    }
+    // Папки, из которых сейчас играет очередь (все их треки в очереди); для вкладок-списков целиком не отмечаем
+    val queueUris = remember(ui.queue) { ui.queue.mapTo(HashSet()) { it.uri } }
+    val playingFolderKeys = remember(folders, queueUris, ui.current, playSource) {
+        val src = playSource
+        val fromOtherTab = src != null && src.startsWith("tab:") && !src.startsWith("tab:FOLDERS")
+        if (ui.current == null || queueUris.isEmpty() || fromOtherTab) emptySet()
+        else folders.filter { g -> g.tracks.isNotEmpty() && g.tracks.all { it.uri in queueUris } }.map { it.key }.toSet()
     }
     val folderEntries = (favFolders + sources).distinctBy { it.uri }
     val selectedFolders = folderEntries.filter { it.uri in groupSel.uris }.map { DocEntry(Uri.parse(it.uri), it.name, true) }
@@ -174,7 +186,15 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                                 Icon(Icons.AutoMirrored.Rounded.Sort, stringResource(R.string.sort))
                             }
                             DropdownMenu(sortMenu, { sortMenu = false }) {
-                                SortMode.entries.forEach { m ->
+                                if (tab == HomeTab.PLAYLISTS) {
+                                    PlaylistSort.entries.forEach { m ->
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(m.label)) },
+                                            leadingIcon = { if (m == plSort) Icon(Icons.Rounded.Check, null) },
+                                            onClick = { vm.playlistSort.value = m; sortMenu = false },
+                                        )
+                                    }
+                                } else SortMode.entries.forEach { m ->
                                     DropdownMenuItem(
                                         text = { Text(stringResource(m.label)) },
                                         leadingIcon = { if (m == sort) Icon(Icons.Rounded.Check, null) },
@@ -232,7 +252,8 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                 }
                 HomeTab.FOLDERS -> LibraryGate(granted, onGrant) {
                     val root = stringResource(R.string.unknown_folder)
-                    GroupList(folders, R.string.unknown_folder, Icons.Rounded.Folder, groupSel) {
+                    GroupList(folders, R.string.unknown_folder, Icons.Rounded.Folder, groupSel,
+                        playingKeys = playingFolderKeys, isPlaying = ui.isPlaying) {
                         onOpen(Dest.Tracks(it.title.ifBlank { root }, it.tracks))
                     }
                 }
@@ -316,6 +337,8 @@ private fun GroupList(
     groups: List<Group>, blankLabel: Int,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     selection: SelectionState,
+    playingKeys: Set<String> = emptySet(),
+    isPlaying: Boolean = false,
     onOpen: (Group) -> Unit,
 ) {
     if (groups.isEmpty()) { EmptyState(icon, stringResource(R.string.library_empty)); return }
@@ -324,6 +347,10 @@ private fun GroupList(
     LazyColumn(Modifier.fillMaxSize()) {
         items(groups, key = { it.key }) { g ->
             val selected = g.key in selection.uris
+            val playing = g.key in playingKeys
+            val playingMark: (@Composable () -> Unit)? = if (playing && !selection.active) ({
+                Icon(if (isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause, null, tint = cs.primary)
+            }) else null
             ListItem(
                 headlineContent = { Text(g.title.ifBlank { stringResource(blankLabel) }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 supportingContent = {
@@ -333,12 +360,19 @@ private fun GroupList(
                 leadingContent = {
                     Box(Modifier.size(52.dp)) {
                         Artwork(g.artUri, Modifier.fillMaxSize(), corner = corner)
+                        if (playing) Box(
+                            Modifier.fillMaxSize().clip(RoundedCornerShape(corner)).background(Color.Black.copy(alpha = 0.45f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(if (isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause, null, tint = Color.White)
+                        }
                         if (selection.active) SelectionBadge(selected, Modifier.align(Alignment.BottomEnd).offset(5.dp, 5.dp))
                     }
                 },
+                trailingContent = playingMark,
                 colors = ListItemDefaults.colors(
                     containerColor = if (selected) cs.secondaryContainer else Color.Transparent,
-                    headlineColor = if (selected) cs.onSecondaryContainer else cs.onSurface,
+                    headlineColor = if (selected) cs.onSecondaryContainer else if (playing) cs.primary else cs.onSurface,
                     supportingColor = if (selected) cs.onSecondaryContainer.copy(alpha = 0.8f) else cs.onSurfaceVariant,
                 ),
                 modifier = Modifier
@@ -355,7 +389,7 @@ private fun GroupList(
 
 @Composable
 private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit) {
-    val lists by vm.playlists.collectAsStateWithLifecycle()
+    val lists by vm.playlistsSorted.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var deleting by remember { mutableStateOf<Long?>(null) }
@@ -374,37 +408,48 @@ private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit) {
         )
     }
 
-    LazyColumn(Modifier.fillMaxSize()) {
-        item {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.new_playlist), color = MaterialTheme.colorScheme.primary) },
-                leadingContent = { Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.primary) },
-                modifier = Modifier.clickable { creating = true },
-            )
-        }
-        items(lists, key = { it.playlist.id }) { p ->
-            var menu by remember { mutableStateOf(false) }
-            val name = if (p.playlist.isSystem) favLabel else p.playlist.name
-            ListItem(
-                headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                supportingContent = { Text(quantityString(R.plurals.tracks_count, p.itemCount)) },
-                leadingContent = {
-                    Icon(if (p.playlist.isSystem) Icons.Rounded.Favorite else Icons.Rounded.QueueMusic, null,
-                        tint = MaterialTheme.colorScheme.primary)
-                },
-                trailingContent = {
-                    if (!p.playlist.isSystem) Box {
-                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }
-                        DropdownMenu(menu, { menu = false }) {
-                            DropdownMenuItem(text = { Text(stringResource(R.string.rename)) },
-                                onClick = { menu = false; renaming = p.playlist.id to p.playlist.name })
-                            DropdownMenuItem(text = { Text(stringResource(R.string.delete)) },
-                                onClick = { menu = false; deleting = p.playlist.id })
-                        }
+    @Composable
+    fun PlaylistRow(p: PlaylistWithCount) {
+        var menu by remember { mutableStateOf(false) }
+        val name = if (p.playlist.isSystem) favLabel else p.playlist.name
+        ListItem(
+            headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            supportingContent = { Text(quantityString(R.plurals.tracks_count, p.itemCount)) },
+            leadingContent = {
+                Icon(if (p.playlist.isSystem) Icons.Rounded.Favorite else Icons.Rounded.QueueMusic, null,
+                    tint = MaterialTheme.colorScheme.primary)
+            },
+            trailingContent = {
+                if (!p.playlist.isSystem) Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }
+                    DropdownMenu(menu, { menu = false }) {
+                        DropdownMenuItem(text = { Text(stringResource(R.string.rename)) },
+                            onClick = { menu = false; renaming = p.playlist.id to p.playlist.name })
+                        DropdownMenuItem(text = { Text(stringResource(R.string.delete)) },
+                            onClick = { menu = false; deleting = p.playlist.id })
                     }
-                },
-                modifier = Modifier.clickable { onOpen(Dest.Playlist(p.playlist.id, name)) },
-            )
+                }
+            },
+            modifier = Modifier.clickable { onOpen(Dest.Playlist(p.playlist.id, name)) },
+        )
+    }
+
+    val favorites = lists.firstOrNull { it.playlist.isSystem }
+    Column(Modifier.fillMaxSize()) {
+        // «Избранное» закреплено в верхней строке и не прокручивается вместе с остальными плейлистами
+        if (favorites != null) {
+            PlaylistRow(favorites)
+            HorizontalDivider()
+        }
+        LazyColumn(Modifier.weight(1f)) {
+            item {
+                ListItem(
+                    headlineContent = { Text(stringResource(R.string.new_playlist), color = MaterialTheme.colorScheme.primary) },
+                    leadingContent = { Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.clickable { creating = true },
+                )
+            }
+            items(lists.filter { !it.playlist.isSystem }, key = { it.playlist.id }) { PlaylistRow(it) }
         }
     }
 }
@@ -421,6 +466,8 @@ private fun FilesTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: Selec
     val sources by vm.sources.collectAsStateWithLifecycle()
     val favs by vm.favFolders.collectAsStateWithLifecycle()
     val importing by vm.importing.collectAsStateWithLifecycle()
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    val playSource by vm.playSource.collectAsStateWithLifecycle()
     val filesLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { vm.importDocuments(it) }
     val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(vm::addSourceFolder) }
 
@@ -428,16 +475,29 @@ private fun FilesTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: Selec
     fun FolderRow(f: com.semenenko.pulseplayer.data.FolderEntity, removable: Boolean) {
         var menu by remember { mutableStateOf(false) }
         val sel = f.uri in selection.uris
+        val playing = ui.current != null && playSource == dirSource(f.uri)
         ListItem(
-            headlineContent = { Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            headlineContent = {
+                Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (playing) MaterialTheme.colorScheme.primary else Color.Unspecified)
+            },
             leadingContent = {
-                Icon(if (sel) Icons.Rounded.CheckCircle else if (f.isFavorite) Icons.Rounded.Star else Icons.Rounded.Folder, null,
-                    tint = MaterialTheme.colorScheme.primary)
+                Icon(
+                    when {
+                        sel -> Icons.Rounded.CheckCircle
+                        playing -> if (ui.isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause
+                        f.isFavorite -> Icons.Rounded.Star
+                        else -> Icons.Rounded.Folder
+                    }, null, tint = MaterialTheme.colorScheme.primary)
             },
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!selection.active) IconButton(onClick = { vm.playFolder(f.uri, f.name) }) {
-                        Icon(Icons.Rounded.PlayArrow, stringResource(R.string.play_folder))
+                    if (!selection.active) IconButton(onClick = { if (playing) vm.onMiniPlay() else vm.playFolder(f.uri, f.name) }) {
+                        Icon(
+                            if (playing && ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            stringResource(R.string.play_folder),
+                            tint = if (playing) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+                        )
                     }
                     if (removable && !selection.active) Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }

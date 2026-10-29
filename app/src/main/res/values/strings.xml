@@ -13,6 +13,8 @@
     <string name="sort_title">By title</string>
     <string name="sort_artist">By artist</string>
     <string name="sort_recent">Recently added</string>
+    <string name="sort_pl_created">Recently created</string>
+    <string name="sort_pl_count">By number of tracks</string>
     <string name="sort_duration">By duration</string>
     <string name="rescan">Rescan library</string>
     <string name="equalizer">Equalizer</string>
