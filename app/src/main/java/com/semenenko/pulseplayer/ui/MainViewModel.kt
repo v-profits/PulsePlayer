@@ -334,7 +334,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // запоминаем папку-источник, чтобы в списке папок показать, что в ней идёт воспроизведение
             val src = entries.singleOrNull()?.takeIf { it.isDir }?.let { dirSource(it.uri.toString()) }
             when (action) {
-                BrowserAction.PLAY -> playTracks(list, 0, source = src)
+                BrowserAction.PLAY -> playList(list, src)   // при включённом «перемешать» старт со случайного трека
                 BrowserAction.SHUFFLE -> playTracks(list, shuffle = true, source = src)
                 BrowserAction.PLAY_NEXT -> playNext(list)
                 BrowserAction.QUEUE -> addToQueue(list)
@@ -551,7 +551,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun playTracksRepeat(list: List<Track>) {
-        playTracks(list, 0)
+        playList(list)
         withController { it.repeatMode = Player.REPEAT_MODE_ALL }
     }
 

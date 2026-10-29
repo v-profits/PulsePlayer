@@ -34,6 +34,7 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
     val favUris by vm.favFolderUris.collectAsStateWithLifecycle()
     val busy by vm.importing.collectAsStateWithLifecycle()
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val playSource by vm.playSource.collectAsStateWithLifecycle()
     val selection = remember { SelectionState() }
     val files = remember(list) { list.orEmpty().filter { !it.isDir } }
     val selected = list.orEmpty().filter { it.uri.toString() in selection.uris }
@@ -80,45 +81,32 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
             list.isEmpty() -> EmptyState(Icons.Rounded.Folder, stringResource(R.string.empty_folder))
             else -> LazyColumn(Modifier.fillMaxSize()) {
                 item(key = "header") {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(onClick = { vm.browserAction(listOf(self), dest.name, BrowserAction.PLAY) }) {
-                            Icon(Icons.Rounded.PlayArrow, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.play))
-                        }
-                        FilledTonalButton(onClick = { vm.browserAction(listOf(self), dest.name, BrowserAction.SHUFFLE) }) {
-                            Icon(Icons.Rounded.Shuffle, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.shuffle))
-                        }
+                    // одна кнопка «Играть» для открытой папки; перемешать — в мини-плеере
+                    val thisPlaying = ui.current != null && playSource == dirSource(dest.uri)
+                    ListPlayBar(thisPlaying && ui.isPlaying, ui.shuffle, null) {
+                        if (thisPlaying) vm.onMiniPlay() else vm.browserAction(listOf(self), dest.name, BrowserAction.PLAY)
                     }
                 }
                 items(list, key = { it.uri.toString() }) { e ->
                     val key = e.uri.toString()
                     val sel = key in selection.uris
                     val current = !e.isDir && ui.current?.uri == key
+                    val dirPlaying = e.isDir && ui.current != null && playSource == dirSource(key)
                     ListItem(
                         headlineContent = {
                             Text(
                                 if (e.isDir) e.name else e.name.substringBeforeLast('.'),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                color = if (current || dirPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             )
                         },
                         leadingContent = {
                             when {
                                 sel -> Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
+                                dirPlaying -> Icon(if (ui.isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause, null, tint = MaterialTheme.colorScheme.primary)
                                 e.isDir -> Icon(Icons.Rounded.Folder, null, tint = MaterialTheme.colorScheme.primary)
                                 current -> Icon(Icons.Rounded.GraphicEq, null, tint = MaterialTheme.colorScheme.primary)
                                 else -> Icon(Icons.Rounded.MusicNote, null)
-                            }
-                        },
-                        trailingContent = {
-                            if (e.isDir && !selection.active) {
-                                IconButton(onClick = { vm.browserAction(listOf(e), e.name, BrowserAction.PLAY) }) {
-                                    Icon(Icons.Rounded.PlayArrow, stringResource(R.string.play_folder))
-                                }
                             }
                         },
                         colors = ListItemDefaults.colors(

@@ -2,6 +2,7 @@
 
 package com.semenenko.pulseplayer.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -97,7 +98,7 @@ fun TrackListScreen(
                 count = selection.uris.size,
                 onClose = { selection.clear() },
                 onSelectAll = { shown.forEach { if (it.uri !in selection.uris) selection.uris.add(it.uri) } },
-                onPlay = { vm.playTracks(selected); selection.clear() },
+                onPlay = { vm.playList(selected); selection.clear() },
                 onPlayNext = { vm.playNext(selected); selection.clear() },
                 onQueue = { vm.addToQueue(selected); selection.clear() },
                 onPlaylist = { vm.pickPlaylistFor(selected); selection.clear() },
@@ -164,7 +165,7 @@ fun TrackListScreen(
                 },
             )
         }
-        if (shown.isNotEmpty()) PlayShuffleRow(shown, vm, listKey)
+        AnimatedVisibility(shown.isNotEmpty() && !selection.active) { ListPlayRow(shown, vm, listKey) }
         if (shown.isEmpty()) {
             EmptyState(
                 Icons.Rounded.QueueMusic,

@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -129,7 +130,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                     }
                 },
                 onPlay = {
-                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.PLAY) else vm.playTracks(selectedTracks)
+                    if (isFolderTab) vm.browserAction(selectedFolders, "", BrowserAction.PLAY) else vm.playList(selectedTracks)
                     clearAll()
                 },
                 onPlayNext = {
@@ -226,7 +227,10 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
 
         if (tab == HomeTab.TRACKS || isGroupTab) {
             ContentFilterRow(contentFilter) { AppSettings.setContentFilter(it) }
-            PlayShuffleRow(contextList, vm, "tab:${tab.name}")
+        }
+        // При выборе элементов «Играть» остаётся только в панели выбора, поэтому кнопка над списком скрыта
+        AnimatedVisibility(!anySelection && (tab == HomeTab.TRACKS || isGroupTab) && contextList.isNotEmpty()) {
+            ListPlayRow(contextList, vm, "tab:${tab.name}")
         }
 
         HorizontalPager(pager, Modifier.weight(1f), beyondViewportPageCount = 0) { p ->
@@ -492,13 +496,6 @@ private fun FilesTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: Selec
             },
             trailingContent = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!selection.active) IconButton(onClick = { if (playing) vm.onMiniPlay() else vm.playFolder(f.uri, f.name) }) {
-                        Icon(
-                            if (playing && ui.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            stringResource(R.string.play_folder),
-                            tint = if (playing) MaterialTheme.colorScheme.primary else LocalContentColor.current,
-                        )
-                    }
                     if (removable && !selection.active) Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }
                         DropdownMenu(menu, { menu = false }) {

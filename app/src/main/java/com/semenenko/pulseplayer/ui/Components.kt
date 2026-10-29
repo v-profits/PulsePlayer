@@ -299,51 +299,39 @@ fun TrackList(
     }
 }
 
+/**
+ * Единственная кнопка «Играть» над открытым списком (вкладка, папка, альбом, исполнитель, плейлист).
+ * Перемешать и повтор живут только в мини-плеере; если «перемешать» включено, список стартует со случайного трека.
+ */
 @Composable
-fun PlayShuffleRow(
-    tracks: List<Track>,
-    vm: MainViewModel,
-    sourceKey: String,
-    trailing: @Composable RowScope.() -> Unit = {},
-) {
+fun ListPlayRow(tracks: List<Track>, vm: MainViewModel, sourceKey: String) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val playSource by vm.playSource.collectAsStateWithLifecycle()
     val sig = remember(sourceKey, tracks) { listSig(sourceKey, tracks) }
-    // Кнопка «включена» (значок паузы) только на том списке/вкладке, где её нажали
-    val playingHere = ui.isPlaying && playSource == sig
+    ListPlayBar(ui.isPlaying && playSource == sig, ui.shuffle, tracks.size) { vm.playFromTop(tracks, sig) }
+}
+
+@Composable
+fun ListPlayBar(playing: Boolean, shuffled: Boolean, count: Int?, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Play: всегда с яркой заливкой, как в плеере; меняется только значок (▶ / пауза)
-        FilledIconButton(
-            onClick = { vm.playFromTop(tracks, sig) },
-            modifier = Modifier.size(44.dp),
-            shape = IconShape,
-        ) {
+        // Текстовая «таблетка», а не круглая иконка, как в плеере: сразу видно, что это «играть список»
+        FilledTonalButton(onClick = onClick, contentPadding = PaddingValues(start = 12.dp, end = 16.dp)) {
             Icon(
-                if (playingHere) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                stringResource(if (playingHere) R.string.pause else R.string.play),
+                when { playing -> Icons.Rounded.Pause; shuffled -> Icons.Rounded.Shuffle; else -> Icons.Rounded.PlayArrow },
+                null, Modifier.size(20.dp),
             )
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(when { playing -> R.string.pause; shuffled -> R.string.play_shuffled; else -> R.string.play }), maxLines = 1)
         }
-        // Перемешать и повтор: без фона; когда включены — фон как у этих значков в плеере и размер как у Play
-        StateIconButton(
-            Icons.Rounded.Shuffle, stringResource(R.string.shuffle), ui.shuffle,
-            size = 44.dp, iconSize = 22.dp,
-        ) { vm.toggleShuffle() }
-        StateIconButton(
-            if (ui.repeat == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-            stringResource(R.string.repeat), ui.repeat != Player.REPEAT_MODE_OFF,
-            size = 44.dp, iconSize = 22.dp,
-        ) { vm.cycleRepeat() }
         Spacer(Modifier.weight(1f))
-        Text(
-            quantityString(R.plurals.tracks_count, tracks.size),
+        if (count != null) Text(
+            quantityString(R.plurals.tracks_count, count),
             style = MaterialTheme.typography.labelLarge, maxLines = 1,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        trailing()
     }
 }
 
