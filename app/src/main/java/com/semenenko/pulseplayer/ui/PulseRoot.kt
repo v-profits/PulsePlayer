@@ -96,6 +96,7 @@ fun PulseRoot(vm: MainViewModel) {
                                         isTop = top,
                                         onOpen = push,
                                         onRemove = { vm.removePicked(it) },
+                                        sortKey = "list_picked",
                                         emptyText = stringResource(R.string.files_empty_title),
                                     )
                                 }

@@ -21,6 +21,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.semenenko.pulseplayer.R
 import com.semenenko.pulseplayer.data.NaturalOrder
 import com.semenenko.pulseplayer.data.Track
+import com.semenenko.pulseplayer.data.AppSettings
+import com.semenenko.pulseplayer.data.loadSort
 import com.semenenko.pulseplayer.data.toTrack
 
 sealed interface Dest {
@@ -37,8 +39,11 @@ private enum class LocalSort(val label: Int) {
     DEFAULT(R.string.sort_default),
     FILENAME(R.string.sort_filename),
     TITLE(R.string.sort_title),
+    TITLE_DESC(R.string.sort_title_desc),
     ARTIST(R.string.sort_artist),
+    ALBUM(R.string.sort_album),
     DURATION(R.string.sort_duration),
+    SHORTEST(R.string.sort_shortest),
 }
 
 @Composable
@@ -52,11 +57,12 @@ fun TrackListScreen(
     onClear: (() -> Unit)? = null,
     isTop: Boolean = true,
     onOpen: (Dest) -> Unit = {},
+    sortKey: String = "list_tracks",   // под этим ключом запоминается выбранная сортировка
 ) {
     val selection = remember { SelectionState() }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    var sort by rememberSaveable { mutableStateOf(LocalSort.DEFAULT) }
+    var sort by remember(sortKey) { mutableStateOf(loadSort(sortKey, LocalSort.DEFAULT)) }
     var menu by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
@@ -72,10 +78,15 @@ fun TrackListScreen(
             LocalSort.DEFAULT -> f
             LocalSort.FILENAME -> f.sortedWith(FileOrder)
             LocalSort.TITLE -> f.sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
+            LocalSort.TITLE_DESC -> f.sortedWith(Comparator { a, b -> NaturalOrder.compare(b.title, a.title) })
+            LocalSort.ALBUM -> f.sortedWith(Comparator { a, b ->
+                NaturalOrder.compare(a.album, b.album).takeIf { it != 0 } ?: FileOrder.compare(a, b)
+            })
             LocalSort.ARTIST -> f.sortedWith(Comparator { a, b ->
                 NaturalOrder.compare(a.artist, b.artist).takeIf { it != 0 } ?: NaturalOrder.compare(a.title, b.title)
             })
             LocalSort.DURATION -> f.sortedByDescending { it.durationMs }
+            LocalSort.SHORTEST -> f.sortedBy { it.durationMs }
         }
     }
     if (isTop) LaunchedEffect(shown) { vm.contextTracks.value = shown }
@@ -151,7 +162,7 @@ fun TrackListScreen(
                                     DropdownMenuItem(
                                         text = { Text(stringResource(m.label)) },
                                         leadingIcon = { if (m == sort) Icon(Icons.Rounded.Check, null) },
-                                        onClick = { sort = m; menu = false },
+                                        onClick = { sort = m; AppSettings.saveSort(sortKey, m); menu = false },
                                     )
                                 }
                                 if (onClear != null) {
@@ -200,6 +211,7 @@ fun PlaylistScreen(
         onClear = { vm.clearPlaylist(id) },
         isTop = isTop,
         onOpen = onOpen,
+        sortKey = "list_playlist",
         emptyText = stringResource(R.string.empty_playlist),
     )
 }

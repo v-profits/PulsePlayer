@@ -87,6 +87,13 @@ object AppSettings {
         prefs?.edit()?.putInt("content_filter", v)?.apply()
     }
 
+    /** Сохранённый вариант сортировки (имя элемента enum) по ключу экрана/вкладки. */
+    fun savedSort(key: String): String? = prefs?.getString("sort_$key", null)
+
+    fun saveSort(key: String, mode: Enum<*>) {
+        prefs?.edit()?.putString("sort_$key", mode.name)?.apply()
+    }
+
     fun setBookMinutes(v: Int) {
         _bookMinutes.value = v
         prefs?.edit()?.putInt("book_minutes", v)?.apply()
@@ -101,4 +108,10 @@ object AppSettings {
             }
         )
     }
+}
+
+/** Читает сохранённую сортировку; если её нет или вариант больше не существует — [default]. */
+inline fun <reified E : Enum<E>> loadSort(key: String, default: E): E {
+    val saved = AppSettings.savedSort(key)
+    return enumValues<E>().firstOrNull { it.name == saved } ?: default
 }

@@ -77,6 +77,7 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
     val ui by vm.ui.collectAsStateWithLifecycle()
     val playSource by vm.playSource.collectAsStateWithLifecycle()
     val plSort by vm.playlistSort.collectAsStateWithLifecycle()
+    val groupSorts by vm.groupSorts.collectAsStateWithLifecycle()
     val playlists by vm.playlistsSorted.collectAsStateWithLifecycle()
     val groupSel = remember { SelectionState() }
 
@@ -207,25 +208,34 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                         Icon(if (searching) Icons.Rounded.Close else Icons.Rounded.Search, stringResource(R.string.search))
                     }
                     if (!searching) {
-                        Box {
+                        // на вкладке «Файлы» сортировать нечего — значок скрыт
+                        if (tab != HomeTab.FILES) Box {
                             IconButton(onClick = { sortMenu = true }) {
                                 Icon(Icons.AutoMirrored.Rounded.Sort, stringResource(R.string.sort))
                             }
                             DropdownMenu(sortMenu, { sortMenu = false }) {
-                                if (tab == HomeTab.PLAYLISTS) {
-                                    PlaylistSort.entries.forEach { m ->
+                                when {
+                                    tab == HomeTab.PLAYLISTS -> PlaylistSort.entries.forEach { m ->
                                         DropdownMenuItem(
                                             text = { Text(stringResource(m.label)) },
                                             leadingIcon = { if (m == plSort) Icon(Icons.Rounded.Check, null) },
-                                            onClick = { vm.playlistSort.value = m; sortMenu = false },
+                                            onClick = { vm.setPlaylistSort(m); sortMenu = false },
                                         )
                                     }
-                                } else SortMode.entries.forEach { m ->
-                                    DropdownMenuItem(
-                                        text = { Text(stringResource(m.label)) },
-                                        leadingIcon = { if (m == sort) Icon(Icons.Rounded.Check, null) },
-                                        onClick = { vm.sort.value = m; sortMenu = false },
-                                    )
+                                    isGroupTab -> GroupSort.entries.forEach { m ->
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(m.label)) },
+                                            leadingIcon = { if (m == (groupSorts[tab.name] ?: GroupSort.NAME)) Icon(Icons.Rounded.Check, null) },
+                                            onClick = { vm.setGroupSort(tab.name, m); sortMenu = false },
+                                        )
+                                    }
+                                    else -> SortMode.entries.forEach { m ->
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(m.label)) },
+                                            leadingIcon = { if (m == sort) Icon(Icons.Rounded.Check, null) },
+                                            onClick = { vm.setSort(m); sortMenu = false },
+                                        )
+                                    }
                                 }
                             }
                         }

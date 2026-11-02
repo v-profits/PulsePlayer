@@ -2,6 +2,7 @@ package com.semenenko.pulseplayer.ui
 
 import android.app.Application
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.annotation.StringRes
@@ -20,6 +21,7 @@ import com.semenenko.pulseplayer.data.AppSettings
 import com.semenenko.pulseplayer.data.DocEntry
 import com.semenenko.pulseplayer.data.FAVORITES_ID
 import com.semenenko.pulseplayer.data.FolderEntity
+import com.semenenko.pulseplayer.data.loadSort
 import com.semenenko.pulseplayer.data.MediaScanner
 import com.semenenko.pulseplayer.data.NaturalOrder
 import com.semenenko.pulseplayer.data.PlaylistEntity
@@ -49,17 +51,45 @@ import kotlinx.coroutines.launch
 
 enum class SortMode(@StringRes val label: Int) {
     TITLE(R.string.sort_title),
-    FILENAME(R.string.sort_filename),
+    TITLE_DESC(R.string.sort_title_desc),
     ARTIST(R.string.sort_artist),
+    ALBUM(R.string.sort_album),
+    FOLDER(R.string.sort_folder),
+    FILENAME(R.string.sort_filename),
     RECENT(R.string.sort_recent),
+    OLDEST(R.string.sort_oldest),
     DURATION(R.string.sort_duration),
+    SHORTEST(R.string.sort_shortest),
+}
+
+/** Сортировка вкладок «Альбомы», «Исполнители» и «Папки». */
+enum class GroupSort(@StringRes val label: Int) {
+    NAME(R.string.sort_title),
+    NAME_DESC(R.string.sort_title_desc),
+    COUNT(R.string.sort_pl_count),
+    COUNT_ASC(R.string.sort_count_asc),
 }
 
 /** Сортировка вкладки «Плейлисты» («Избранное» всегда закреплено сверху и в сортировке не участвует). */
 enum class PlaylistSort(@StringRes val label: Int) {
     CREATED(R.string.sort_pl_created),
+    CREATED_ASC(R.string.sort_pl_created_asc),
     NAME(R.string.sort_title),
+    NAME_DESC(R.string.sort_title_desc),
     COUNT(R.string.sort_pl_count),
+    COUNT_ASC(R.string.sort_count_asc),
+}
+
+private val TitleOrder = Comparator<Track> { a, b -> NaturalOrder.compare(a.title, b.title) }
+
+private fun List<Group>.sortedGroups(mode: GroupSort): List<Group> {
+    val byName = Comparator<Group> { a, b -> NaturalOrder.compare(a.title, b.title) }
+    return when (mode) {
+        GroupSort.NAME -> sortedWith(byName)
+        GroupSort.NAME_DESC -> sortedWith(byName.reversed())
+        GroupSort.COUNT -> sortedWith(compareByDescending<Group> { it.tracks.size }.then(byName))
+        GroupSort.COUNT_ASC -> sortedWith(compareBy<Group> { it.tracks.size }.then(byName))
+    }
 }
 
 enum class BrowserAction { PLAY, SHUFFLE, PLAY_NEXT, QUEUE, PLAYLIST, FAV_TRACKS, FAV_FOLDERS }
@@ -102,7 +132,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
     val query = MutableStateFlow("")
-    val sort = MutableStateFlow(SortMode.TITLE)
+    // Все варианты сортировки запоминаются и восстанавливаются при следующем запуске
+    val sort = MutableStateFlow(loadSort("tracks", SortMode.TITLE))
+    fun setSort(m: SortMode) { sort.value = m; AppSettings.saveSort("tracks", m) }
+
+    /** Сортировка вкладок-групп по имени вкладки: ALBUMS / ARTISTS / FOLDERS. */
+    val groupSorts = MutableStateFlow(
+        listOf("ALBUMS", "ARTISTS", "FOLDERS").associateWith { loadSort("group_$it", GroupSort.NAME) }
+    )
+    fun setGroupSort(tab: String, m: GroupSort) {
+        groupSorts.update { it + (tab to m) }
+        AppSettings.saveSort("group_$tab", m)
+    }
 
     /** Библиотека после фильтров настроек: скрытие коротких и разделение «музыка / книги». */
     private val filteredLibrary = combine(
@@ -123,32 +164,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true)
         }
         when (s) {
-            SortMode.TITLE -> f.sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
+            SortMode.TITLE -> f.sortedWith(TitleOrder)
+            SortMode.TITLE_DESC -> f.sortedWith(TitleOrder.reversed())
+            SortMode.ALBUM -> f.sortedWith(Comparator { a, b ->
+                NaturalOrder.compare(a.album, b.album).takeIf { it != 0 } ?: FileOrder.compare(a, b)
+            })
+            SortMode.FOLDER -> f.sortedWith(Comparator { a, b ->
+                NaturalOrder.compare(a.folder, b.folder).takeIf { it != 0 } ?: FileOrder.compare(a, b)
+            })
             SortMode.FILENAME -> f.sortedWith(FileOrder)
             SortMode.ARTIST -> f.sortedWith(Comparator { a, b ->
                 NaturalOrder.compare(a.artist, b.artist).takeIf { it != 0 } ?: NaturalOrder.compare(a.title, b.title)
             })
             SortMode.RECENT -> f.sortedByDescending { it.dateAdded }
+            SortMode.OLDEST -> f.sortedBy { it.dateAdded }
             SortMode.DURATION -> f.sortedByDescending { it.durationMs }
+            SortMode.SHORTEST -> f.sortedBy { it.durationMs }
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val albums: StateFlow<List<Group>> = tracks.map { list ->
+    val albums: StateFlow<List<Group>> = combine(tracks, groupSorts) { list, gs ->
         list.filter { it.album.isNotBlank() }.groupBy { it.album }
             .map { (k, v) -> Group("a:$k", k, v.first().artist, v.firstNotNullOfOrNull { it.artUri }, v.sortedWith(FileOrder)) }
-            .sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
+            .sortedGroups(gs["ALBUMS"] ?: GroupSort.NAME)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val artists: StateFlow<List<Group>> = tracks.map { list ->
+    val artists: StateFlow<List<Group>> = combine(tracks, groupSorts) { list, gs ->
         list.groupBy { it.artist }
             .map { (k, v) -> Group("r:$k", k, "", v.firstNotNullOfOrNull { it.artUri }, v) }
-            .sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
+            .sortedGroups(gs["ARTISTS"] ?: GroupSort.NAME)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val folders: StateFlow<List<Group>> = tracks.map { list ->
+    val folders: StateFlow<List<Group>> = combine(tracks, groupSorts) { list, gs ->
         list.groupBy { it.folder }
             .map { (k, v) -> Group("f:$k", k.substringAfterLast('/'), k, v.firstNotNullOfOrNull { it.artUri }, v.sortedWith(FileOrder)) }
-            .sortedWith(Comparator { a, b -> NaturalOrder.compare(a.title, b.title) })
+            .sortedGroups(gs["FOLDERS"] ?: GroupSort.NAME)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun rescan() {
@@ -209,15 +259,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ---------- Плейлисты ----------
     val playlists = dao.observePlaylists()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    val playlistSort = MutableStateFlow(PlaylistSort.CREATED)
+    val playlistSort = MutableStateFlow(loadSort("playlists", PlaylistSort.CREATED))
+    fun setPlaylistSort(m: PlaylistSort) { playlistSort.value = m; AppSettings.saveSort("playlists", m) }
     /** Плейлисты: «Избранное» первым, остальные — в выбранном порядке. */
     val playlistsSorted: StateFlow<List<PlaylistWithCount>> = combine(playlists, playlistSort) { all, mode ->
         val fav = all.filter { it.playlist.isSystem }
         val rest = all.filterNot { it.playlist.isSystem }
         fav + when (mode) {
             PlaylistSort.CREATED -> rest.sortedByDescending { it.playlist.createdAt }
+            PlaylistSort.CREATED_ASC -> rest.sortedBy { it.playlist.createdAt }
             PlaylistSort.NAME -> rest.sortedWith(Comparator { a, b -> NaturalOrder.compare(a.playlist.name, b.playlist.name) })
+            PlaylistSort.NAME_DESC -> rest.sortedWith(Comparator { a, b -> NaturalOrder.compare(b.playlist.name, a.playlist.name) })
             PlaylistSort.COUNT -> rest.sortedByDescending { it.itemCount }
+            PlaylistSort.COUNT_ASC -> rest.sortedBy { it.itemCount }
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val favoriteUris: StateFlow<Set<String>> = dao.observeFavoriteUris().map { it.toSet() }
@@ -496,7 +550,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Подпись списка, с которого запущено воспроизведение (для вида кнопки Play над списком). */
-    val playSource = MutableStateFlow<String?>(null)
+    private val playerPrefs = app.getSharedPreferences("player_ui_state", Context.MODE_PRIVATE)
+    val playSource = MutableStateFlow<String?>(playerPrefs.getString("play_source", null))
+    // источник тоже переживает перезапуск, чтобы после возобновления папка/вкладка по-прежнему отмечалась как играющая
+    init { viewModelScope.launch { playSource.collect { playerPrefs.edit().putString("play_source", it).apply() } } }
 
     val contextTracks = MutableStateFlow<List<Track>>(emptyList())
     private val _stopped = MutableStateFlow(false)
