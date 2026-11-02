@@ -15,9 +15,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -42,6 +44,7 @@ import com.semenenko.pulseplayer.data.AppSettings
 import com.semenenko.pulseplayer.audio.EqualizerManager
 import com.semenenko.pulseplayer.data.DocEntry
 import com.semenenko.pulseplayer.data.PlaylistWithCount
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 enum class HomeTab(val label: Int) {
@@ -92,13 +95,15 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
         HomeTab.FOLDERS -> folders
         else -> emptyList()
     }
-    // Папки, из которых сейчас играет очередь (все их треки в очереди); для вкладок-списков целиком не отмечаем
+    // Отметки «играет»: какие папки, исполнители, альбомы и плейлисты целиком в очереди и какой из них содержит играющий трек
+    val membership by vm.membership.collectAsStateWithLifecycle()
     val queueUris = remember(ui.queue) { ui.queue.mapTo(HashSet()) { it.uri } }
-    val playingFolderKeys = remember(folders, queueUris, ui.current, playSource) {
-        val src = playSource
-        val fromOtherTab = src != null && src.startsWith("tab:") && !src.startsWith("tab:FOLDERS")
-        if (ui.current == null || queueUris.isEmpty() || fromOtherTab) emptySet()
-        else folders.filter { g -> g.tracks.isNotEmpty() && g.tracks.all { it.uri in queueUris } }.map { it.key }.toSet()
+    val curUri = ui.current?.uri
+    val albumMarks = remember(albums, queueUris, curUri, playSource) { groupMarks(albums, queueUris, curUri, playSource, "ALBUMS") }
+    val artistMarks = remember(artists, queueUris, curUri, playSource) { groupMarks(artists, queueUris, curUri, playSource, "ARTISTS") }
+    val folderMarks = remember(folders, queueUris, curUri, playSource) { groupMarks(folders, queueUris, curUri, playSource, "FOLDERS") }
+    val playlistMarks = remember(playlists, membership, queueUris, curUri, playSource) {
+        buildPlaylistMarks(playlists, membership, queueUris, curUri, playSource)
     }
     val folderEntries = (favFolders + sources).distinctBy { it.uri }
     val selectedFolders = folderEntries.filter { it.uri in groupSel.uris }.map { DocEntry(Uri.parse(it.uri), it.name, true) }
@@ -280,8 +285,8 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                     )
                     isPlaylistTab -> vm.withPlaylistTracks(
                         if (groupSel.active) selectedPlaylistIds else playlists.map { it.playlist.id },
-                    ) { vm.playFromBar(it, null) }
-                    anySelection -> vm.playFromBar(selectedTracks, null)
+                    ) { vm.playFromBar(it, if (groupSel.active) "sel:PLAYLISTS" else "tab:PLAYLISTS") }
+                    anySelection -> vm.playFromBar(selectedTracks, if (isGroupTab) "sel:${tab.name}" else null)
                     else -> vm.playFromBar(contextList, listSig("tab:${tab.name}", contextList))
                 }
                 clearAll()
@@ -301,22 +306,23 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                     }
                 }
                 HomeTab.ALBUMS -> LibraryGate(granted, onGrant) {
-                    GroupGrid(albums, R.string.unknown_album, groupSel) { onOpen(Dest.Tracks(it.title, it.tracks)) }
+                    GroupGrid(albums, R.string.unknown_album, groupSel, albumMarks, ui.isPlaying, vm) { onOpen(Dest.Tracks(it.title, it.tracks)) }
                 }
                 HomeTab.ARTISTS -> LibraryGate(granted, onGrant) {
                     val unknown = stringResource(R.string.unknown_artist)
-                    GroupList(artists, R.string.unknown_artist, Icons.Rounded.Person, groupSel) {
+                    GroupList(artists, R.string.unknown_artist, Icons.Rounded.Person, groupSel,
+                        marks = artistMarks, isPlaying = ui.isPlaying, vm = vm) {
                         onOpen(Dest.Tracks(it.title.ifBlank { unknown }, it.tracks))
                     }
                 }
                 HomeTab.FOLDERS -> LibraryGate(granted, onGrant) {
                     val root = stringResource(R.string.unknown_folder)
                     GroupList(folders, R.string.unknown_folder, Icons.Rounded.Folder, groupSel,
-                        playingKeys = playingFolderKeys, isPlaying = ui.isPlaying) {
+                        marks = folderMarks, isPlaying = ui.isPlaying, vm = vm) {
                         onOpen(Dest.Tracks(it.title.ifBlank { root }, it.tracks))
                     }
                 }
-                HomeTab.PLAYLISTS -> PlaylistsTab(vm, onOpen, groupSel)
+                HomeTab.PLAYLISTS -> PlaylistsTab(vm, onOpen, groupSel, playlistMarks, ui.isPlaying)
                 HomeTab.FILES -> FilesTab(vm, onOpen, groupSel)
             }
         }
@@ -348,19 +354,69 @@ private fun LibraryGate(granted: Boolean, onGrant: () -> Unit, content: @Composa
     }
 }
 
+/** Какие группы сейчас в очереди ([queued]) и какая из них содержит играющий трек ([current]). */
+private class PlayMarks(val queued: Set<String>, val current: String?) {
+    companion object { val None = PlayMarks(emptySet(), null) }
+}
+
+/** Очередь запущена с другой вкладки или выбором на другой вкладке — на этой отметки не показываем. */
+private fun fromOtherTab(src: String?, tab: String) =
+    src != null && ((src.startsWith("tab:") && !src.startsWith("tab:$tab")) || (src.startsWith("sel:") && src != "sel:$tab"))
+
+private fun groupMarks(groups: List<Group>, queue: Set<String>, current: String?, src: String?, tab: String): PlayMarks {
+    if (current == null || queue.isEmpty() || fromOtherTab(src, tab)) return PlayMarks.None
+    val queued = groups.filter { g -> g.tracks.isNotEmpty() && g.tracks.all { it.uri in queue } }
+    return PlayMarks(
+        queued.mapTo(HashSet()) { it.key },
+        queued.firstOrNull { g -> g.tracks.any { it.uri == current } }?.key,
+    )
+}
+
+private fun buildPlaylistMarks(
+    lists: List<PlaylistWithCount>, membership: Map<Long, Set<String>>,
+    queue: Set<String>, current: String?, src: String?,
+): PlayMarks {
+    if (current == null || queue.isEmpty() || fromOtherTab(src, "PLAYLISTS")) return PlayMarks.None
+    val queued = lists.filter { p ->
+        val m = membership[p.playlist.id].orEmpty()
+        m.isNotEmpty() && m.all { it in queue }
+    }
+    // «Избранное» содержит много чего, поэтому текущим по возможности считаем обычный плейлист
+    val cur = queued.sortedBy { it.playlist.isSystem }.firstOrNull { current in membership[it.playlist.id].orEmpty() }
+    return PlayMarks(queued.mapTo(HashSet()) { it.playlist.id.toString() }, cur?.playlist?.id?.toString())
+}
+
+/** Индекс группы, к которой надо прокрутить: среди играющих, иначе просто содержащей трек. */
+private fun revealIndex(groups: List<Group>, marks: PlayMarks, uri: String): Int =
+    groups.indexOfFirst { g -> g.key in marks.queued && g.tracks.any { it.uri == uri } }
+        .takeIf { it >= 0 } ?: groups.indexOfFirst { g -> g.tracks.any { it.uri == uri } }
+
 /** Альбомы/исполнители/папки: долгое нажатие — выбор нескольких без открытия. */
 @Composable
-private fun GroupGrid(groups: List<Group>, blankLabel: Int, selection: SelectionState, onOpen: (Group) -> Unit) {
+private fun GroupGrid(
+    groups: List<Group>, blankLabel: Int, selection: SelectionState,
+    marks: PlayMarks, isPlaying: Boolean, vm: MainViewModel,
+    onOpen: (Group) -> Unit,
+) {
     if (groups.isEmpty()) { EmptyState(Icons.Rounded.Album, stringResource(R.string.library_empty)); return }
     val cs = MaterialTheme.colorScheme
+    val gridState = rememberLazyGridState()
+    val currentGroups by rememberUpdatedState(groups)
+    val currentMarks by rememberUpdatedState(marks)
+    LaunchedEffect(Unit) {
+        vm.reveal.collectLatest { uri -> gridState.revealItem(revealIndex(currentGroups, currentMarks, uri)) }
+    }
     LazyVerticalGrid(
         GridCells.Adaptive(150.dp),
+        state = gridState,
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(groups, key = { it.key }) { g ->
             val selected = g.key in selection.uris
+            val queued = g.key in marks.queued
+            val playing = g.key == marks.current
             CompositionLocalProvider(
                 LocalContentColor provides if (selected) cs.onSecondaryContainer else LocalContentColor.current
             ) {
@@ -375,11 +431,25 @@ private fun GroupGrid(groups: List<Group>, blankLabel: Int, selection: Selection
                 ) {
                     Box {
                         Artwork(g.artUri, Modifier.fillMaxWidth().aspectRatio(1f), corner = 14.dp)
+                        if (playing && !selection.active) Box(
+                            Modifier.matchParentSize().clip(RoundedCornerShape(14.dp)).background(Color.Black.copy(alpha = 0.45f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(if (isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause, null,
+                                Modifier.size(36.dp), tint = Color.White)
+                        } else if (queued && !selection.active) Box(
+                            Modifier.align(Alignment.BottomStart).padding(6.dp).size(26.dp)
+                                .clip(RoundedCornerShape(50)).background(cs.primary),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.QueueMusic, null, Modifier.size(16.dp), tint = cs.onPrimary)
+                        }
                         if (selection.active) SelectionBadge(selected, Modifier.align(Alignment.TopEnd).padding(6.dp))
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(g.title.ifBlank { stringResource(blankLabel) }, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleSmall)
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (queued && !selected) cs.primary else Color.Unspecified)
                     val artist = g.subtitle.ifBlank { stringResource(R.string.unknown_artist) }
                     Text("$artist · ${quantityString(R.plurals.tracks_count, g.tracks.size)}",
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -396,19 +466,31 @@ private fun GroupList(
     groups: List<Group>, blankLabel: Int,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     selection: SelectionState,
-    playingKeys: Set<String> = emptySet(),
+    marks: PlayMarks = PlayMarks.None,
     isPlaying: Boolean = false,
+    vm: MainViewModel,
     onOpen: (Group) -> Unit,
 ) {
     if (groups.isEmpty()) { EmptyState(icon, stringResource(R.string.library_empty)); return }
     val cs = MaterialTheme.colorScheme
     val corner = 10.dp
-    LazyColumn(Modifier.fillMaxSize()) {
+    val listState = rememberLazyListState()
+    val currentGroups by rememberUpdatedState(groups)
+    val currentMarks by rememberUpdatedState(marks)
+    LaunchedEffect(Unit) {
+        // после ручного переключения трека показываем папку (исполнителя), в которой он лежит
+        vm.reveal.collectLatest { uri -> listState.revealItem(revealIndex(currentGroups, currentMarks, uri)) }
+    }
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(groups, key = { it.key }) { g ->
             val selected = g.key in selection.uris
-            val playing = g.key in playingKeys
-            val playingMark: (@Composable () -> Unit)? = if (playing && !selection.active) ({
-                Icon(if (isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause, null, tint = cs.primary)
+            val queued = g.key in marks.queued
+            val playing = g.key == marks.current
+            val playingMark: (@Composable () -> Unit)? = if (queued && !selection.active) ({
+                Icon(
+                    when { playing && isPlaying -> Icons.Rounded.GraphicEq; playing -> Icons.Rounded.Pause; else -> Icons.Rounded.QueueMusic },
+                    null, tint = cs.primary,
+                )
             }) else null
             ListItem(
                 headlineContent = { Text(g.title.ifBlank { stringResource(blankLabel) }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -431,7 +513,7 @@ private fun GroupList(
                 trailingContent = playingMark,
                 colors = ListItemDefaults.colors(
                     containerColor = if (selected) cs.secondaryContainer else Color.Transparent,
-                    headlineColor = if (selected) cs.onSecondaryContainer else if (playing) cs.primary else cs.onSurface,
+                    headlineColor = if (selected) cs.onSecondaryContainer else if (queued) cs.primary else cs.onSurface,
                     supportingColor = if (selected) cs.onSecondaryContainer.copy(alpha = 0.8f) else cs.onSurfaceVariant,
                 ),
                 modifier = Modifier
@@ -447,12 +529,29 @@ private fun GroupList(
 }
 
 @Composable
-private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: SelectionState) {
+private fun PlaylistsTab(
+    vm: MainViewModel, onOpen: (Dest) -> Unit, selection: SelectionState,
+    marks: PlayMarks, isPlaying: Boolean,
+) {
     val lists by vm.playlistsSorted.collectAsStateWithLifecycle()
     var creating by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var deleting by remember { mutableStateOf<Long?>(null) }
     val favLabel = stringResource(R.string.favorites)
+    val membership by vm.membership.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    val currentLists by rememberUpdatedState(lists)
+    val currentMarks by rememberUpdatedState(marks)
+    val currentMembership by rememberUpdatedState(membership)
+    LaunchedEffect(Unit) {
+        // после ручного переключения трека показываем плейлист, из которого он играет (+1 — строка «Новый плейлист»)
+        vm.reveal.collectLatest { uri ->
+            val i = currentLists.filter { !it.playlist.isSystem }.indexOfFirst { p ->
+                p.playlist.id.toString() in currentMarks.queued && uri in currentMembership[p.playlist.id].orEmpty()
+            }
+            if (i >= 0) listState.revealItem(i + 1)
+        }
+    }
 
     if (creating) NameDialog(R.string.new_playlist, "", { creating = false }) { vm.createPlaylist(it); creating = false }
     renaming?.let { (id, name) ->
@@ -473,25 +572,37 @@ private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: S
         val name = if (p.playlist.isSystem) favLabel else p.playlist.name
         val key = p.playlist.id.toString()
         val sel = key in selection.uris
+        val queued = key in marks.queued
+        val playing = key == marks.current
         ListItem(
-            headlineContent = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            headlineContent = {
+                Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = if (queued && !sel) MaterialTheme.colorScheme.primary else Color.Unspecified)
+            },
             supportingContent = { Text(quantityString(R.plurals.tracks_count, p.itemCount)) },
             leadingContent = {
                 Icon(
                     when {
                         sel -> Icons.Rounded.CheckCircle
+                        playing -> if (isPlaying) Icons.Rounded.GraphicEq else Icons.Rounded.Pause
                         p.playlist.isSystem -> Icons.Rounded.Favorite
                         else -> Icons.Rounded.QueueMusic
                     }, null, tint = MaterialTheme.colorScheme.primary)
             },
             trailingContent = {
-                if (!p.playlist.isSystem && !selection.active) Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }
-                    DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.rename)) },
-                            onClick = { menu = false; renaming = p.playlist.id to p.playlist.name })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.delete)) },
-                            onClick = { menu = false; deleting = p.playlist.id })
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (queued && !selection.active) Icon(
+                        when { playing && isPlaying -> Icons.Rounded.GraphicEq; playing -> Icons.Rounded.Pause; else -> Icons.Rounded.QueueMusic },
+                        null, tint = MaterialTheme.colorScheme.primary,
+                    )
+                    if (!p.playlist.isSystem && !selection.active) Box {
+                        IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, stringResource(R.string.more_options)) }
+                        DropdownMenu(menu, { menu = false }) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.rename)) },
+                                onClick = { menu = false; renaming = p.playlist.id to p.playlist.name })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.delete)) },
+                                onClick = { menu = false; deleting = p.playlist.id })
+                        }
                     }
                 }
             },
@@ -512,7 +623,7 @@ private fun PlaylistsTab(vm: MainViewModel, onOpen: (Dest) -> Unit, selection: S
             PlaylistRow(favorites)
             HorizontalDivider()
         }
-        LazyColumn(Modifier.weight(1f)) {
+        LazyColumn(Modifier.weight(1f), state = listState) {
             item {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.new_playlist), color = MaterialTheme.colorScheme.primary) },

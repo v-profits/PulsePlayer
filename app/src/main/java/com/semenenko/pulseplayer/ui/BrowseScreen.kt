@@ -8,6 +8,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -80,10 +82,20 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
         }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
 
+        val listState = rememberLazyListState()
+        val currentList by rememberUpdatedState(list)
+        LaunchedEffect(Unit) {
+            // после ручного переключения трека показываем играющий файл, если он за границей экрана (+1 — строка «Играть»)
+            vm.reveal.collectLatest { uri ->
+                val i = currentList?.indexOfFirst { it.uri.toString() == uri } ?: -1
+                if (i >= 0) listState.revealItem(i + 1)
+            }
+        }
+
         when {
             list == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             list.isEmpty() -> EmptyState(Icons.Rounded.Folder, stringResource(R.string.empty_folder))
-            else -> LazyColumn(Modifier.fillMaxSize()) {
+            else -> LazyColumn(Modifier.fillMaxSize(), state = listState) {
                 item(key = "header") {
                     // Без выделения играет вся папка, с выделением — только выделенное.
                     // Число треков известно, пока среди элементов нет вложенных папок.

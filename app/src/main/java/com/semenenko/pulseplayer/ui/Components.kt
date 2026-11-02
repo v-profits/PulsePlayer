@@ -17,6 +17,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -254,6 +259,54 @@ fun TrackRow(
     }
 }
 
+/**
+ * Подтягивает элемент [index] в видимую область минимальным сдвигом: если он ушёл вниз — становится самым нижним
+ * видимым, если вверх — самым верхним. Так при каждом «Следующем» список добавляет снизу по одной строке.
+ * Если элемент далеко за экраном, он ставится у ближайшего края.
+ */
+suspend fun LazyListState.revealItem(index: Int) {
+    if (index < 0) return
+    val info = layoutInfo
+    val start = info.viewportStartOffset
+    val end = info.viewportEndOffset
+    val visible = info.visibleItemsInfo
+    val item = visible.firstOrNull { it.index == index }
+    if (item != null) {
+        val bottomOverflow = item.offset + item.size - end
+        val topOverflow = start - item.offset
+        when {
+            bottomOverflow > 0 -> animateScrollBy(bottomOverflow.toFloat())
+            topOverflow > 0 -> animateScrollBy(-topOverflow.toFloat())
+        }
+        return
+    }
+    val last = visible.lastOrNull()
+    if (last != null && index > last.index) animateScrollToItem(index, scrollOffset = -(end - start - last.size).coerceAtLeast(0))
+    else animateScrollToItem(index)
+}
+
+/** То же для сетки (вкладка «Альбомы»): элемент подтягивается к нижнему или верхнему краю минимальным сдвигом. */
+suspend fun LazyGridState.revealItem(index: Int) {
+    if (index < 0) return
+    val info = layoutInfo
+    val start = info.viewportStartOffset
+    val end = info.viewportEndOffset
+    val visible = info.visibleItemsInfo
+    val item = visible.firstOrNull { it.index == index }
+    if (item != null) {
+        val bottomOverflow = item.offset.y + item.size.height - end
+        val topOverflow = start - item.offset.y
+        when {
+            bottomOverflow > 0 -> animateScrollBy(bottomOverflow.toFloat())
+            topOverflow > 0 -> animateScrollBy(-topOverflow.toFloat())
+        }
+        return
+    }
+    val last = visible.lastOrNull()
+    if (last != null && index > last.index) animateScrollToItem(index, scrollOffset = -(end - start - last.size.height).coerceAtLeast(0))
+    else animateScrollToItem(index)
+}
+
 @Composable
 fun TrackList(
     tracks: List<Track>,
@@ -267,7 +320,17 @@ fun TrackList(
     val ui by vm.ui.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
     val inPlaylists by vm.playlistUris.collectAsStateWithLifecycle()
-    LazyColumn(modifier.fillMaxSize()) {
+    val listState = rememberLazyListState()
+    val currentTracks by rememberUpdatedState(tracks)
+    val headerCount = if (header != null) 1 else 0
+    LaunchedEffect(Unit) {
+        // после ручного переключения трека показываем играющий, если он за границей экрана
+        vm.reveal.collectLatest { uri ->
+            val i = currentTracks.indexOfFirst { it.uri == uri }
+            if (i >= 0) listState.revealItem(i + headerCount)
+        }
+    }
+    LazyColumn(modifier.fillMaxSize(), state = listState) {
         if (header != null) item(key = "header") { header() }
         itemsIndexed(tracks, key = { i, t -> "$i|${t.uri}" }) { index, t ->
             TrackRow(

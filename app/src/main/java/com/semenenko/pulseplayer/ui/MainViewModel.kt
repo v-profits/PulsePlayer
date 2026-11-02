@@ -35,8 +35,11 @@ import com.semenenko.pulseplayer.data.toTrack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -415,7 +418,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val errors: Flow<String> = _errors
     private var skipStreak = 0
 
+    // После ручного переключения (следующий/предыдущий, выбор из очереди, кнопки уведомления и гарнитуры)
+    // списки прокручиваются к играющему элементу. Автопереход к следующему треку список не трогает.
+    private var revealPending = false
+    private val _reveal = MutableSharedFlow<String>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val reveal: SharedFlow<String> = _reveal.asSharedFlow()
+
     private val listener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) revealPending = true
+        }
+
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) skipStreak = 0
         }
@@ -492,6 +505,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             index = p.currentMediaItemIndex,
         )
         _position.value = p.currentPosition
+        if (revealPending) {
+            revealPending = false
+            current?.let { _reveal.tryEmit(it.uri) }
+        }
     }
 
     private fun withController(block: (MediaController) -> Unit) {
