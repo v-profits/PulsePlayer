@@ -23,6 +23,7 @@ import com.semenenko.pulseplayer.audio.EqualizerManager
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private lateinit var store: PlayerStateStore   // сохранение очереди и позиции между запусками
 
     /** true — обычный аудиотракт без собственного DSP (аварийный режим, если DSP-цепочка сломалась). */
     private var safeMode = false
@@ -71,7 +72,7 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true) // пауза при отключении наушников
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
-            .also { it.addListener(listener) }
+            .also { it.addListener(listener); store.attach(it) }
     }
 
     /** Пересоздаёт плеер без DSP, сохраняя очередь, позицию и режимы — музыка не должна «слетать». */
@@ -104,9 +105,14 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         EqualizerManager.init(this)
+        store = PlayerStateStore(this)
 
         val player = buildPlayer(false)
         EqualizerManager.attach(player.audioSessionId)
+        // Поднимаем очередь, сохранённую при прошлом запуске (если её не сбросили кнопкой «Стоп»), ДО создания сессии:
+        // тогда экран при подключении сразу получает восстановленный трек, а не пустой плеер.
+        Log.i(TAG, "service created")
+        store.restoreNow()
 
         val pi = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -126,6 +132,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        store.flush()   // запоминаем позицию до освобождения плеера
         EqualizerManager.release()
         session?.run {
             player.release()

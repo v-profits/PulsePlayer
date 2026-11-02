@@ -49,11 +49,13 @@ class PlayerStateStore(context: Context) {
     private var player: Player? = null
     private var destroyed = false
 
-    private val queueTask = Runnable { writeQueueSnapshot(async = true) }
+    private val queueTask = Runnable { if (!destroyed) writeQueueSnapshot(async = true) }
 
     private val listener = object : Player.Listener {
         override fun onTimelineChanged(timeline: Timeline, reason: Int) {
-            if (reason != Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) return
+            // после финального сохранения (остановка сервиса) события освобождающегося плеера игнорируем,
+            // иначе «пустая очередь» при выгрузке сотрёт сохранённое состояние
+            if (destroyed || reason != Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) return
             val p = player ?: return
             if (p.mediaItemCount == 0) {            // «Стоп» или очистка очереди — забываем всё
                 main.removeCallbacks(queueTask)
@@ -83,22 +85,31 @@ class PlayerStateStore(context: Context) {
         p.addListener(listener)
     }
 
-    /** Если плеер пуст — поднимает сохранённую очередь на паузе с той же позиции, в тех же режимах и порядке. */
-    fun restore() {
-        io.execute {
-            val saved = runCatching { load() }.onFailure { Log.w(TAG, "load state failed", it) }.getOrNull()
-                ?: return@execute
-            main.post { player?.let { apply(it, saved) } }
+    /**
+     * Если плеер пуст — поднимает сохранённую очередь на паузе с той же позиции, в тех же режимах и порядке.
+     * Вызывается синхронно при создании сервиса, до создания сессии: чтение файла занимает миллисекунды,
+     * зато экран не успевает увидеть пустой плеер.
+     */
+    fun restoreNow() {
+        Log.i(TAG, "restore requested")
+        val saved = runCatching { load() }.onFailure { Log.w(TAG, "load state failed", it) }.getOrNull() ?: return
+        val p = player ?: return
+        // Повреждённое сохранение не должно ронять сервис при каждом запуске: при любой ошибке его просто отбрасываем
+        runCatching { apply(p, saved) }.onFailure {
+            Log.w(TAG, "restore failed, dropping saved state", it)
+            runCatching { p.clearMediaItems() }
+            clear()
         }
     }
 
     /** Последнее сохранение перед остановкой сервиса. */
     fun flush() {
-        destroyed = true
+        Log.i(TAG, "flush on service destroy: items=${player?.mediaItemCount}")
         main.removeCallbacks(queueTask)
         // Пустой плеер (восстановление ещё не завершилось) ничего не стирает: очередь удаляется только при «Стоп»
         if ((player?.mediaItemCount ?: 0) > 0) writeQueueSnapshot(async = true)
         saveState()
+        destroyed = true                     // дальше состояние не трогаем, что бы ни происходило при выгрузке плеера
         io.shutdown()
         runCatching { io.awaitTermination(2, TimeUnit.SECONDS) }
     }
@@ -106,6 +117,7 @@ class PlayerStateStore(context: Context) {
     // ---------- сохранение ----------
 
     private fun scheduleQueue() {
+        if (destroyed) return
         main.removeCallbacks(queueTask)
         main.postDelayed(queueTask, QUEUE_SAVE_DELAY_MS)
     }
@@ -123,7 +135,7 @@ class PlayerStateStore(context: Context) {
     /** Малое состояние (индекс, позиция, режимы) — в настройках; вызывается часто и стоит дёшево. */
     private fun saveState() {
         val p = player ?: return
-        if (p.mediaItemCount == 0) return
+        if (destroyed || p.mediaItemCount == 0) return
         val pos = if (p.playbackState == Player.STATE_ENDED) 0L else p.currentPosition.coerceAtLeast(0L)
         prefs.edit()
             .putBoolean(K_HAS, true)
@@ -136,6 +148,8 @@ class PlayerStateStore(context: Context) {
     }
 
     private fun clear() {
+        if (destroyed) return
+        Log.i(TAG, "saved player state cleared (queue became empty)")
         prefs.edit().clear().apply()
         io.execute { runCatching { file.delete() } }
     }
@@ -178,12 +192,16 @@ class PlayerStateStore(context: Context) {
             w.endObject()
         }
         if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+        Log.i(TAG, "queue saved: ${items.size} items")
     }
 
     // ---------- восстановление ----------
 
     private fun load(): Saved? {
-        if (!prefs.getBoolean(K_HAS, false) || !file.exists()) return null
+        if (!prefs.getBoolean(K_HAS, false) || !file.exists()) {
+            Log.i(TAG, "nothing to restore: has=${prefs.getBoolean(K_HAS, false)}, queueFile=${file.exists()}")
+            return null
+        }
         val items = ArrayList<MediaItem>()
         var order = IntArray(0)
         JsonReader(file.bufferedReader()).use { r ->
@@ -247,6 +265,7 @@ class PlayerStateStore(context: Context) {
         // тот же порядок перемешивания, что был до закрытия приложения
         if (p is ExoPlayer && s.order.isNotEmpty()) p.setShuffleOrder(DefaultShuffleOrder(s.order, System.currentTimeMillis()))
         p.prepare()
+        Log.i(TAG, "player state restored: ${s.items.size} items, index=${s.index}, pos=${s.positionMs} ms, shuffle=${s.shuffle}, repeat=${s.repeat}")
         p.playWhenReady = false             // восстанавливаем на паузе: «Play» продолжит с того же места
     }
 
