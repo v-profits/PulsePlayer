@@ -175,6 +175,11 @@
     <string name="info_modified">Modified</string>
     <string name="storage_internal">Internal storage</string>
     <string name="storage_sd">SD card</string>
+    <string name="unsupported_badge">Format %1$s is not supported</string>
+    <string name="msg_unsupported_tap">Format %1$s is not supported by the player, track not started</string>
+    <string name="msg_skipped_unsupported">Skipped files in unsupported formats: %1$d</string>
+    <string name="msg_no_supported">No files in supported formats</string>
+    <string name="unsupported_device">Format %2$s is not supported on this device, track skipped: %1$s</string>
     <string name="unsupported_format">Format not supported, track skipped: %1$s (%2$s)</string>
     <string name="rate_title">Enjoying Pulse Player?</string>
     <string name="rate_desc">Tap a star to rate the app</string>

@@ -57,6 +57,7 @@ class MediaScanner(private val ctx: Context) {
                     folder = folder,
                     fileName = c.getString(8).orEmpty().substringBeforeLast('.'),
                     isBook = flagged || BOOK_PATH.containsMatchIn(folder),
+                    extension = AudioFormats.extensionOf(c.getString(8)),
                 )
             }
         }
@@ -82,9 +83,10 @@ class MediaScanner(private val ctx: Context) {
                 artUri = r.embeddedPicture?.let { saveArt(uri, it) },
                 fileName = name,
                 dateAdded = System.currentTimeMillis() / 1000,
+                extension = AudioFormats.extensionOf(displayName(uri)),
             )
         } catch (e: Exception) {
-            Track(uri.toString(), name, "", "", 0L)
+            Track(uri.toString(), name, "", "", 0L, extension = AudioFormats.extensionOf(displayName(uri)))
         } finally {
             runCatching { r.release() }
         }
@@ -179,6 +181,7 @@ class MediaScanner(private val ctx: Context) {
         artist = "", album = "", durationMs = 0L, artUri = null,
         dateAdded = System.currentTimeMillis() / 1000, folder = folderName,
         fileName = e.name.substringBeforeLast('.'),
+        extension = AudioFormats.extensionOf(e.name),
     )
 
     private fun isAudioName(name: String?): Boolean =

@@ -15,6 +15,7 @@ data class Track(
     val folder: String = "",
     val fileName: String = "",
     val isBook: Boolean = false,
+    val extension: String = "",
 )
 
 fun Track.toMediaItem(): MediaItem = MediaItem.Builder()

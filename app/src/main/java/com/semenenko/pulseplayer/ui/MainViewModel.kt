@@ -20,7 +20,9 @@ import com.semenenko.pulseplayer.data.AppDb
 import com.semenenko.pulseplayer.data.AppSettings
 import com.semenenko.pulseplayer.data.DocEntry
 import com.semenenko.pulseplayer.data.FAVORITES_ID
+import com.semenenko.pulseplayer.data.AudioFormats
 import com.semenenko.pulseplayer.data.FolderEntity
+import com.semenenko.pulseplayer.data.isUnsupportedFormat
 import com.semenenko.pulseplayer.data.loadSort
 import com.semenenko.pulseplayer.data.MediaScanner
 import com.semenenko.pulseplayer.data.NaturalOrder
@@ -167,6 +169,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 else -> true
             }
         }
+    }
+
+    /** Треки библиотеки в заведомо неподдерживаемых форматах: uri → расширение (WMA, APE и т. д.); нужны и для плейлистов, где расширения нет. */
+    val unsupportedFormats: StateFlow<Map<String, String>> = _library.map { all ->
+        all.filter { it.isUnsupportedFormat() }.associate { it.uri to it.extension.uppercase() }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private fun isUnsupported(t: Track) = t.isUnsupportedFormat() || t.uri in unsupportedFormats.value
+    private fun formatOf(t: Track) = unsupportedFormats.value[t.uri] ?: t.extension.uppercase().ifBlank { "?" }
+
+    /** Оставляет только треки, которые плеер может воспроизвести; о пропущенных сообщает. */
+    private fun playable(list: List<Track>): List<Track> {
+        val ok = list.filterNot(::isUnsupported)
+        val skipped = list.size - ok.size
+        if (skipped > 0) {
+            val app = getApplication<Application>()
+            _errors.tryEmit(
+                if (ok.isEmpty()) app.getString(R.string.msg_no_supported)
+                else app.getString(R.string.msg_skipped_unsupported, skipped)
+            )
+        }
+        return ok
     }
 
     val tracks: StateFlow<List<Track>> = combine(filteredLibrary, query, sort) { lib, q, s ->
@@ -442,12 +466,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         override fun onPlayerError(error: PlaybackException) {
             val app = getApplication<Application>()
+            val item = controller?.currentMediaItem
+            val title = item?.mediaMetadata?.title?.toString().orEmpty()
+            val ext = item?.mediaId?.let { id ->
+                unsupportedFormats.value[id] ?: _library.value.firstOrNull { it.uri == id }?.extension?.uppercase()
+            }.orEmpty()
             if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED) {
                 // Формат контейнера не поддерживается (например WMA/APE): понятное сообщение вместо технического
-                val item = controller?.currentMediaItem
-                val title = item?.mediaMetadata?.title?.toString().orEmpty()
                 val mime = item?.mediaId?.let { id -> runCatching { app.contentResolver.getType(Uri.parse(id)) }.getOrNull() }
-                _errors.tryEmit(app.getString(R.string.unsupported_format, title, mime?.ifBlank { null } ?: "?"))
+                _errors.tryEmit(app.getString(R.string.unsupported_format, title, ext.ifBlank { mime?.ifBlank { null } ?: "?" }))
+            } else if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
+                error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES
+            ) {
+                // Контейнер прочитан, но на этом телефоне нет подходящего декодера (ALAC, AC3, DTS и т. п.)
+                _errors.tryEmit(app.getString(R.string.unsupported_device, title, ext.ifBlank { "?" }))
             } else {
                 val why = error.cause?.let { " · ${it.javaClass.simpleName}: ${it.message}" }.orEmpty()
                 _errors.tryEmit(app.getString(R.string.playback_error, (error.errorCodeName + why).take(160)))
@@ -528,6 +562,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         groups: PlayGroups? = null,
     ) {
         if (list.isEmpty()) return
+        if (list.any(::isUnsupported)) {
+            val tapped = if (shuffle == true) null else list.getOrNull(start)
+            if (tapped != null && isUnsupported(tapped)) {
+                // нажали на файл, который плеер не умеет играть — понятное сообщение вместо молчаливого пропуска
+                _errors.tryEmit(getApplication<Application>().getString(R.string.msg_unsupported_tap, formatOf(tapped)))
+                return
+            }
+            val ok = playable(list)
+            if (ok.isEmpty()) return
+            playTracks(ok, tapped?.let { ok.indexOf(it) }?.coerceAtLeast(0) ?: 0, shuffle, source, groups)
+            return
+        }
         withController { c ->
             playSource.value = source
             playGroups.value = groups
@@ -541,7 +587,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun playNext(list: List<Track>) {
+    fun playNext(all: List<Track>) {
+        val list = playable(all)
         if (list.isEmpty()) return
         withController { c ->
             val items = list.map { it.toMediaItem() }
@@ -554,7 +601,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addToQueue(list: List<Track>) {
+    fun addToQueue(all: List<Track>) {
+        val list = playable(all)
         if (list.isEmpty()) return
         withController { c ->
             val items = list.map { it.toMediaItem() }
@@ -615,7 +663,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val openPlayer = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     /** Играет переданный список с начала; при включённом «перемешать» — со случайного трека. */
-    fun playList(list: List<Track>, source: String? = null, groups: PlayGroups? = null) {
+    fun playList(all: List<Track>, source: String? = null, groups: PlayGroups? = null) {
+        if (all.isEmpty()) return
+        val list = playable(all)
         if (list.isEmpty()) return
         _stopped.value = false
         withController { c ->

@@ -8,6 +8,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import com.semenenko.pulseplayer.data.AudioFormats
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
@@ -110,14 +111,26 @@ fun BrowseScreen(vm: MainViewModel, dest: Dest.Browse, onBack: () -> Unit, onOpe
                     val sel = key in selection.uris
                     val current = !e.isDir && ui.current?.uri == key
                     val dirPlaying = e.isDir && ui.current != null && playSource == dirSource(key)
+                    val badExt = if (e.isDir) null
+                        else AudioFormats.extensionOf(e.name).takeIf { AudioFormats.isUnsupportedExt(it) }?.uppercase()
                     ListItem(
                         headlineContent = {
                             Text(
                                 if (e.isDir) e.name else e.name.substringBeforeLast('.'),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                color = if (current || dirPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                color = when {
+                                    current || dirPlaying -> MaterialTheme.colorScheme.primary
+                                    badExt != null -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                },
                             )
                         },
+                        supportingContent = if (badExt != null) ({
+                            Text(
+                                stringResource(R.string.unsupported_badge, badExt),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error,
+                            )
+                        }) else null,
                         leadingContent = {
                             when {
                                 sel -> Icon(Icons.Rounded.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)

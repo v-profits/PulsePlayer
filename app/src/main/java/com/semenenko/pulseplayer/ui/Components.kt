@@ -18,6 +18,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.gestures.animateScrollBy
+import com.semenenko.pulseplayer.data.isUnsupportedFormat
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import kotlinx.coroutines.flow.collectLatest
@@ -183,6 +184,7 @@ fun TrackRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onAction: (TrackAction) -> Unit,
+    unsupportedFormat: String? = null,   // расширение (WMA, APE…), если плеер такой формат не играет
 ) {
     val cs = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
@@ -212,7 +214,12 @@ fun TrackRow(
                 track.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                color = when { selected -> cs.onSecondaryContainer; current -> cs.primary; else -> cs.onSurface },
+                color = when {
+                    selected -> cs.onSecondaryContainer
+                    current -> cs.primary
+                    unsupportedFormat != null -> cs.onSurface.copy(alpha = 0.5f)
+                    else -> cs.onSurface
+                },
             )
             val artist = track.artist.ifBlank { stringResource(R.string.unknown_artist) }
             Text(
@@ -222,6 +229,15 @@ fun TrackRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = if (selected) cs.onSecondaryContainer.copy(alpha = 0.8f) else cs.onSurfaceVariant,
             )
+            if (unsupportedFormat != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(14.dp), tint = cs.error)
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    stringResource(R.string.unsupported_badge, unsupportedFormat),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall, color = cs.error,
+                )
+            }
         }
         StateIconButton(
             if (favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
@@ -320,6 +336,7 @@ fun TrackList(
     val ui by vm.ui.collectAsStateWithLifecycle()
     val favs by vm.favoriteUris.collectAsStateWithLifecycle()
     val inPlaylists by vm.playlistUris.collectAsStateWithLifecycle()
+    val unsupported by vm.unsupportedFormats.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val currentTracks by rememberUpdatedState(tracks)
     val headerCount = if (header != null) 1 else 0
@@ -342,6 +359,7 @@ fun TrackList(
                 favorite = t.uri in favs,
                 inPlaylist = t.uri in inPlaylists,
                 canRemove = onRemove != null,
+                unsupportedFormat = unsupported[t.uri] ?: t.extension.uppercase().takeIf { t.isUnsupportedFormat() },
                 onClick = {
                     if (selection.active) selection.toggle(t.uri)
                     else vm.playTracks(tracks, index, source = sourceKey?.let { listSig(it, tracks) })

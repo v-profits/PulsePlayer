@@ -179,6 +179,11 @@
     <string name="info_modified">Изменён</string>
     <string name="storage_internal">Внутренняя память</string>
     <string name="storage_sd">SD-карта</string>
+    <string name="unsupported_badge">Формат %1$s не поддерживается</string>
+    <string name="msg_unsupported_tap">Формат %1$s не поддерживается плеером, трек не запущен</string>
+    <string name="msg_skipped_unsupported">Пропущено файлов в неподдерживаемых форматах: %1$d</string>
+    <string name="msg_no_supported">В списке нет файлов в поддерживаемых форматах</string>
+    <string name="unsupported_device">Формат %2$s не поддерживается этим устройством, трек пропущен: %1$s</string>
     <string name="unsupported_format">Формат не поддерживается, трек пропущен: %1$s (%2$s)</string>
     <string name="rate_title">Нравится Pulse Player?</string>
     <string name="rate_desc">Нажмите на звезду, чтобы оценить приложение</string>
