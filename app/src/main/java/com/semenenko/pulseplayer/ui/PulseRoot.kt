@@ -86,7 +86,7 @@ fun PulseRoot(vm: MainViewModel) {
                         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                             val top = entry === stack.lastOrNull()
                             when (val d = entry.dest) {
-                                is Dest.Tracks -> TrackListScreen(d.title, d.tracks, vm, pop, isTop = top, onOpen = push)
+                                is Dest.Tracks -> TrackListScreen(d.title, d.tracks, vm, pop, isTop = top, onOpen = push, playGroup = d.group)
                                 is Dest.Playlist -> PlaylistScreen(d.id, d.name, vm, pop, top, push)
                                 is Dest.Browse -> BrowseScreen(vm, d, pop) { push(it) }
                                 Dest.Picked -> {

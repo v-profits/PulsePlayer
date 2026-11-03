@@ -95,6 +95,13 @@ private fun List<Group>.sortedGroups(mode: GroupSort): List<Group> {
     }
 }
 
+/**
+ * Какие элементы вкладки ([tab]: ALBUMS / ARTISTS / FOLDERS / PLAYLISTS) запущены на воспроизведение: ключи выбранных
+ * или все, если играли вкладку целиком. Отметки «играет» строятся по этому, а не по очереди плеера: контроллер из-за
+ * ограничения на размер передаваемых данных отдаёт только часть большой очереди.
+ */
+data class PlayGroups(val tab: String, val keys: Set<String>)
+
 enum class BrowserAction { PLAY, SHUFFLE, PLAY_NEXT, QUEUE, PLAYLIST, FAV_TRACKS, FAV_FOLDERS }
 
 /** Источник воспроизведения «папка из файловой системы» (вкладка «Файлы»). */
@@ -516,15 +523,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (c != null) block(c) else pending += block
     }
 
-    fun playTracks(list: List<Track>, start: Int = 0, shuffle: Boolean? = null, source: String? = null) {
+    fun playTracks(
+        list: List<Track>, start: Int = 0, shuffle: Boolean? = null, source: String? = null,
+        groups: PlayGroups? = null,
+    ) {
         if (list.isEmpty()) return
         withController { c ->
             playSource.value = source
+            playGroups.value = groups
             if (shuffle != null) c.shuffleModeEnabled = shuffle
             val startIndex = if (shuffle == true) list.indices.random() else start.coerceIn(list.indices)
             c.setMediaItems(list.map { it.toMediaItem() }, startIndex, 0L)
             c.prepare()
             c.play()
+            // первый играющий трек (или элемент списка) должен быть виден на экране, даже если он далеко за границей
+            _reveal.tryEmit(list[startIndex].uri)
         }
     }
 
@@ -572,6 +585,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // источник тоже переживает перезапуск, чтобы после возобновления папка/вкладка по-прежнему отмечалась как играющая
     init { viewModelScope.launch { playSource.collect { playerPrefs.edit().putString("play_source", it).apply() } } }
 
+    /** Какие альбомы / исполнители / папки / плейлисты сейчас играют (для отметок в списках); переживает перезапуск. */
+    val playGroups = MutableStateFlow(
+        playerPrefs.getString("play_groups_tab", null)?.let { t ->
+            PlayGroups(t, playerPrefs.getStringSet("play_groups_keys", emptySet()).orEmpty().toSet())
+        }
+    )
+    init {
+        viewModelScope.launch {
+            playGroups.collect { g ->
+                playerPrefs.edit().putString("play_groups_tab", g?.tab).putStringSet("play_groups_keys", g?.keys).apply()
+            }
+        }
+    }
+
     val contextTracks = MutableStateFlow<List<Track>>(emptyList())
     private val _stopped = MutableStateFlow(false)
     val stopped: StateFlow<Boolean> = _stopped.asStateFlow()
@@ -580,6 +607,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun stopPlayback() {
         _stopped.value = true
         playSource.value = null
+        playGroups.value = null
         withController { it.pause(); it.stop(); it.clearMediaItems() }
     }
 
@@ -587,12 +615,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val openPlayer = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     /** Играет переданный список с начала; при включённом «перемешать» — со случайного трека. */
-    fun playList(list: List<Track>, source: String? = null) {
+    fun playList(list: List<Track>, source: String? = null, groups: PlayGroups? = null) {
         if (list.isEmpty()) return
         _stopped.value = false
         withController { c ->
             val start = if (c.shuffleModeEnabled) list.indices.random() else 0
-            playTracks(list, start, source = source)
+            playTracks(list, start, source = source, groups = groups)
         }
     }
 
@@ -600,9 +628,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Кнопка «Играть» над списком: играет выбранное (или весь открытый список, если ничего не выбрано).
      * Перемешивание и повтор берутся из состояния кнопок плеера.
      */
-    fun playFromBar(list: List<Track>, source: String?) {
+    fun playFromBar(list: List<Track>, source: String?, groups: PlayGroups? = null) {
         if (list.isEmpty()) return
-        playList(list, source)
+        playList(list, source, groups)
         if (AppSettings.openPlayerOnPlay.value) openPlayer.tryEmit(Unit)
     }
 

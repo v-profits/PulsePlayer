@@ -44,6 +44,7 @@ import com.semenenko.pulseplayer.data.AppSettings
 import com.semenenko.pulseplayer.audio.EqualizerManager
 import com.semenenko.pulseplayer.data.DocEntry
 import com.semenenko.pulseplayer.data.PlaylistWithCount
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -95,15 +96,15 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
         HomeTab.FOLDERS -> folders
         else -> emptyList()
     }
-    // Отметки «играет»: какие папки, исполнители, альбомы и плейлисты целиком в очереди и какой из них содержит играющий трек
+    // Отметки «играет»: какие альбомы, исполнители, папки и плейлисты запущены и какой из них содержит играющий трек
     val membership by vm.membership.collectAsStateWithLifecycle()
-    val queueUris = remember(ui.queue) { ui.queue.mapTo(HashSet()) { it.uri } }
+    val playGroups by vm.playGroups.collectAsStateWithLifecycle()
     val curUri = ui.current?.uri
-    val albumMarks = remember(albums, queueUris, curUri, playSource) { groupMarks(albums, queueUris, curUri, playSource, "ALBUMS") }
-    val artistMarks = remember(artists, queueUris, curUri, playSource) { groupMarks(artists, queueUris, curUri, playSource, "ARTISTS") }
-    val folderMarks = remember(folders, queueUris, curUri, playSource) { groupMarks(folders, queueUris, curUri, playSource, "FOLDERS") }
-    val playlistMarks = remember(playlists, membership, queueUris, curUri, playSource) {
-        buildPlaylistMarks(playlists, membership, queueUris, curUri, playSource)
+    val albumMarks = remember(albums, playGroups, curUri) { groupMarks(albums, playGroups, curUri, "ALBUMS") }
+    val artistMarks = remember(artists, playGroups, curUri) { groupMarks(artists, playGroups, curUri, "ARTISTS") }
+    val folderMarks = remember(folders, playGroups, curUri) { groupMarks(folders, playGroups, curUri, "FOLDERS") }
+    val playlistMarks = remember(playlists, membership, playGroups, curUri) {
+        buildPlaylistMarks(playlists, membership, playGroups, curUri)
     }
     val folderEntries = (favFolders + sources).distinctBy { it.uri }
     val selectedFolders = folderEntries.filter { it.uri in groupSel.uris }.map { DocEntry(Uri.parse(it.uri), it.name, true) }
@@ -283,11 +284,20 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                         if (groupSel.active) selectedFolders else folderEntries.map { DocEntry(Uri.parse(it.uri), it.name, true) },
                         "", BrowserAction.PLAY,
                     )
-                    isPlaylistTab -> vm.withPlaylistTracks(
-                        if (groupSel.active) selectedPlaylistIds else playlists.map { it.playlist.id },
-                    ) { vm.playFromBar(it, if (groupSel.active) "sel:PLAYLISTS" else "tab:PLAYLISTS") }
-                    anySelection -> vm.playFromBar(selectedTracks, if (isGroupTab) "sel:${tab.name}" else null)
-                    else -> vm.playFromBar(contextList, listSig("tab:${tab.name}", contextList))
+                    isPlaylistTab -> {
+                        val ids = if (groupSel.active) selectedPlaylistIds else playlists.map { it.playlist.id }
+                        val groups = PlayGroups("PLAYLISTS", ids.mapTo(HashSet()) { it.toString() })   // копия до сброса выделения
+                        vm.withPlaylistTracks(ids) { vm.playFromBar(it, "sel:PLAYLISTS", groups) }
+                    }
+                    anySelection -> vm.playFromBar(
+                        selectedTracks,
+                        if (isGroupTab) "sel:${tab.name}" else null,
+                        if (isGroupTab) PlayGroups(tab.name, groupSel.uris.toSet()) else null,
+                    )
+                    else -> vm.playFromBar(
+                        contextList, listSig("tab:${tab.name}", contextList),
+                        if (isGroupTab) PlayGroups(tab.name, groups.mapTo(HashSet()) { it.key }) else null,
+                    )
                 }
                 clearAll()
             }
@@ -306,20 +316,20 @@ fun HomeScreen(vm: MainViewModel, granted: Boolean, onGrant: () -> Unit, isTop: 
                     }
                 }
                 HomeTab.ALBUMS -> LibraryGate(granted, onGrant) {
-                    GroupGrid(albums, R.string.unknown_album, groupSel, albumMarks, ui.isPlaying, vm) { onOpen(Dest.Tracks(it.title, it.tracks)) }
+                    GroupGrid(albums, R.string.unknown_album, groupSel, albumMarks, ui.isPlaying, vm) { onOpen(Dest.Tracks(it.title, it.tracks, PlayGroups("ALBUMS", setOf(it.key)))) }
                 }
                 HomeTab.ARTISTS -> LibraryGate(granted, onGrant) {
                     val unknown = stringResource(R.string.unknown_artist)
                     GroupList(artists, R.string.unknown_artist, Icons.Rounded.Person, groupSel,
                         marks = artistMarks, isPlaying = ui.isPlaying, vm = vm) {
-                        onOpen(Dest.Tracks(it.title.ifBlank { unknown }, it.tracks))
+                        onOpen(Dest.Tracks(it.title.ifBlank { unknown }, it.tracks, PlayGroups("ARTISTS", setOf(it.key))))
                     }
                 }
                 HomeTab.FOLDERS -> LibraryGate(granted, onGrant) {
                     val root = stringResource(R.string.unknown_folder)
                     GroupList(folders, R.string.unknown_folder, Icons.Rounded.Folder, groupSel,
                         marks = folderMarks, isPlaying = ui.isPlaying, vm = vm) {
-                        onOpen(Dest.Tracks(it.title.ifBlank { root }, it.tracks))
+                        onOpen(Dest.Tracks(it.title.ifBlank { root }, it.tracks, PlayGroups("FOLDERS", setOf(it.key))))
                     }
                 }
                 HomeTab.PLAYLISTS -> PlaylistsTab(vm, onOpen, groupSel, playlistMarks, ui.isPlaying)
@@ -359,31 +369,22 @@ private class PlayMarks(val queued: Set<String>, val current: String?) {
     companion object { val None = PlayMarks(emptySet(), null) }
 }
 
-/** Очередь запущена с другой вкладки или выбором на другой вкладке — на этой отметки не показываем. */
-private fun fromOtherTab(src: String?, tab: String) =
-    src != null && ((src.startsWith("tab:") && !src.startsWith("tab:$tab")) || (src.startsWith("sel:") && src != "sel:$tab"))
-
-private fun groupMarks(groups: List<Group>, queue: Set<String>, current: String?, src: String?, tab: String): PlayMarks {
-    if (current == null || queue.isEmpty() || fromOtherTab(src, tab)) return PlayMarks.None
-    val queued = groups.filter { g -> g.tracks.isNotEmpty() && g.tracks.all { it.uri in queue } }
+private fun groupMarks(groups: List<Group>, pg: PlayGroups?, current: String?, tab: String): PlayMarks {
+    if (pg == null || pg.tab != tab || current == null) return PlayMarks.None
     return PlayMarks(
-        queued.mapTo(HashSet()) { it.key },
-        queued.firstOrNull { g -> g.tracks.any { it.uri == current } }?.key,
+        pg.keys,
+        groups.firstOrNull { g -> g.key in pg.keys && g.tracks.any { it.uri == current } }?.key,
     )
 }
 
 private fun buildPlaylistMarks(
-    lists: List<PlaylistWithCount>, membership: Map<Long, Set<String>>,
-    queue: Set<String>, current: String?, src: String?,
+    lists: List<PlaylistWithCount>, membership: Map<Long, Set<String>>, pg: PlayGroups?, current: String?,
 ): PlayMarks {
-    if (current == null || queue.isEmpty() || fromOtherTab(src, "PLAYLISTS")) return PlayMarks.None
-    val queued = lists.filter { p ->
-        val m = membership[p.playlist.id].orEmpty()
-        m.isNotEmpty() && m.all { it in queue }
-    }
+    if (pg == null || pg.tab != "PLAYLISTS" || current == null) return PlayMarks.None
     // «Избранное» содержит много чего, поэтому текущим по возможности считаем обычный плейлист
-    val cur = queued.sortedBy { it.playlist.isSystem }.firstOrNull { current in membership[it.playlist.id].orEmpty() }
-    return PlayMarks(queued.mapTo(HashSet()) { it.playlist.id.toString() }, cur?.playlist?.id?.toString())
+    val cur = lists.sortedBy { it.playlist.isSystem }
+        .firstOrNull { it.playlist.id.toString() in pg.keys && current in membership[it.playlist.id].orEmpty() }
+    return PlayMarks(pg.keys, cur?.playlist?.id?.toString())
 }
 
 /** Индекс группы, к которой надо прокрутить: среди играющих, иначе просто содержащей трек. */
@@ -404,7 +405,10 @@ private fun GroupGrid(
     val currentGroups by rememberUpdatedState(groups)
     val currentMarks by rememberUpdatedState(marks)
     LaunchedEffect(Unit) {
-        vm.reveal.collectLatest { uri -> gridState.revealItem(revealIndex(currentGroups, currentMarks, uri)) }
+        vm.reveal.collectLatest { uri ->
+            delay(80)   // отметки обновляются после запуска воспроизведения
+            gridState.revealItem(revealIndex(currentGroups, currentMarks, uri))
+        }
     }
     LazyVerticalGrid(
         GridCells.Adaptive(150.dp),
@@ -479,7 +483,10 @@ private fun GroupList(
     val currentMarks by rememberUpdatedState(marks)
     LaunchedEffect(Unit) {
         // после ручного переключения трека показываем папку (исполнителя), в которой он лежит
-        vm.reveal.collectLatest { uri -> listState.revealItem(revealIndex(currentGroups, currentMarks, uri)) }
+        vm.reveal.collectLatest { uri ->
+            delay(80)
+            listState.revealItem(revealIndex(currentGroups, currentMarks, uri))
+        }
     }
     LazyColumn(Modifier.fillMaxSize(), state = listState) {
         items(groups, key = { it.key }) { g ->
@@ -546,6 +553,7 @@ private fun PlaylistsTab(
     LaunchedEffect(Unit) {
         // после ручного переключения трека показываем плейлист, из которого он играет (+1 — строка «Новый плейлист»)
         vm.reveal.collectLatest { uri ->
+            delay(80)
             val i = currentLists.filter { !it.playlist.isSystem }.indexOfFirst { p ->
                 p.playlist.id.toString() in currentMarks.queued && uri in currentMembership[p.playlist.id].orEmpty()
             }

@@ -26,7 +26,7 @@ import com.semenenko.pulseplayer.data.loadSort
 import com.semenenko.pulseplayer.data.toTrack
 
 sealed interface Dest {
-    data class Tracks(val title: String, val tracks: List<Track>) : Dest
+    data class Tracks(val title: String, val tracks: List<Track>, val group: PlayGroups? = null) : Dest
     data class Playlist(val id: Long, val name: String) : Dest
     data class Browse(val uri: String, val name: String) : Dest
     data object Picked : Dest
@@ -58,6 +58,7 @@ fun TrackListScreen(
     isTop: Boolean = true,
     onOpen: (Dest) -> Unit = {},
     sortKey: String = "list_tracks",   // под этим ключом запоминается выбранная сортировка
+    playGroup: PlayGroups? = null,     // какой элемент вкладки (папка, исполнитель, альбом, плейлист) открыт на этом экране
 ) {
     val selection = remember { SelectionState() }
     var searching by rememberSaveable { mutableStateOf(false) }
@@ -181,7 +182,7 @@ fun TrackListScreen(
         }
         if (shown.isNotEmpty()) ListPlayBar(if (selection.active) selected.size else shown.size) {
             if (selection.active) { vm.playFromBar(selected, null); selection.clear() }
-            else vm.playFromBar(shown, listSig(listKey, shown))
+            else vm.playFromBar(shown, listSig(listKey, shown), playGroup)
         }
         if (shown.isEmpty()) {
             EmptyState(
@@ -212,6 +213,7 @@ fun PlaylistScreen(
         isTop = isTop,
         onOpen = onOpen,
         sortKey = "list_playlist",
+        playGroup = PlayGroups("PLAYLISTS", setOf(id.toString())),
         emptyText = stringResource(R.string.empty_playlist),
     )
 }
